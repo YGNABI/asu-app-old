@@ -380,6 +380,17 @@ class SisDashboardActivity : AppCompatActivity() {
         DataStore.payment = rawTables["payment"]?.let { pickLargestTable(it) } ?: mutableListOf()
         DataStore.account = rawTables["account"]?.let { pickLargestTable(it) } ?: mutableListOf()
 
+        val debugLines = StringBuilder()
+        debugLines.append("phase=$phase | sessionId=[$sessionId]<br>")
+        for (key in listOf("regTimes", "studentBasic", "registration", "semesterGrades", "attendance", "planSummaryTable", "grades", "payment", "account")) {
+            val t = rawTables[key]
+            val tableCount = t?.length() ?: -1
+            val rowCounts = if (t != null) (0 until t.length()).joinToString(",") { t.getJSONArray(it).length().toString() } else "-"
+            debugLines.append("$key: جداول=$tableCount صفوف=[$rowCounts]<br>")
+        }
+        debugLines.append("planDetail عدد الفئات المجلوبة=${planDetails.size} / متوقع=$categoryCount<br>")
+        DataStore.debugInfo = debugLines.toString()
+
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).apply()
         resultWebView.settings.javaScriptEnabled = true
@@ -403,4 +414,5 @@ object DataStore {
     var payment: List<List<String>> = emptyList()
     var account: List<List<String>> = emptyList()
     var accountBalance: String = ""
+    var debugInfo: String = ""
 }
