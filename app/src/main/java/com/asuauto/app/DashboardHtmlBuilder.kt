@@ -9,6 +9,22 @@ object DashboardHtmlBuilder {
         return -1
     }
 
+    private fun colIndexAny(header: List<String>, candidates: List<String>): Int {
+        for (needle in candidates) {
+            val idx = colIndex(header, needle)
+            if (idx >= 0) return idx
+        }
+        return -1
+    }
+
+    private fun kvAny(rows: List<List<String>>, candidates: List<String>): String {
+        for (label in candidates) {
+            val v = kv(rows, label)
+            if (v.isNotBlank()) return v
+        }
+        return ""
+    }
+
     private fun kv(rows: List<List<String>>, label: String): String {
         for (row in rows) {
             if (row.size >= 2) {
@@ -225,10 +241,11 @@ object DashboardHtmlBuilder {
                 .badge-gold { background:#caa23e; color:#fff; font-size:11px; padding:3px 10px; border-radius:12px; }
             </style></head><body>
             <div class="tabs">
-                <div class="tab active" onclick="showPage('home')">الرئيسية</div>
-                <div class="tab" onclick="showPage('plan')">الخطة الدراسية</div>
-                <div class="tab" onclick="showPage('grades')">كشف الدرجات</div>
-                <div class="tab" onclick="showPage('account')">كشف الحساب</div>
+                <div class="tab active" onclick="showPage('home')" style="flex:1">الرئيسية</div>
+                <div class="tab" onclick="showPage('plan')" style="flex:1">الخطة الدراسية</div>
+                <div class="tab" onclick="showPage('grades')" style="flex:1">كشف الدرجات</div>
+                <div class="tab" onclick="showPage('account')" style="flex:1">كشف الحساب</div>
+                <div onclick="if(typeof AndroidBridge!=='undefined') AndroidBridge.refresh();" style="padding:12px 10px;color:#fff;cursor:pointer;font-size:12px;background:#1a252f">↻</div>
             </div>
             """.trimIndent()
         )
