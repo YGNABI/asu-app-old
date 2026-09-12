@@ -70,9 +70,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<Button>(R.id.btnSis).setOnClickListener {
-            webView.loadUrl("https://sis.asu.edu.bh/ords/f?p=101:1")
-        }
         findViewById<Button>(R.id.btnElearning).setOnClickListener {
             webView.loadUrl("https://elearning.asu.edu.bh/login/index.php")
         }
