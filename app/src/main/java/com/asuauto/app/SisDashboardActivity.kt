@@ -73,8 +73,9 @@ class SisDashboardActivity : AppCompatActivity() {
         }
         function scrapeTableByLabel(labelText) {
             var tables = document.querySelectorAll('table.t-Report-report');
+            var wanted = (labelText||'').trim();
             for (var i=0;i<tables.length;i++){
-                if ((tables[i].getAttribute('aria-label')||'').trim() === labelText) {
+                if ((tables[i].getAttribute('aria-label')||'').trim() === wanted) {
                     var rows = [];
                     var trs = tables[i].querySelectorAll('tr');
                     for (var ri=0; ri<trs.length; ri++) {
@@ -350,6 +351,16 @@ class SisDashboardActivity : AppCompatActivity() {
         @JavascriptInterface
         fun refresh() {
             runOnUiThread { startScraping() }
+        }
+
+        @JavascriptInterface
+        fun logout() {
+            runOnUiThread {
+                android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().clear().apply()
+                DataStore.reset()
+                finish()
+            }
         }
     }
 
