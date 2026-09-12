@@ -3,67 +3,33 @@ package com.asuauto.app
 object DashboardHtmlBuilder {
 
     private fun esc(s: String) = s.replace("\"", "&quot;").replace("<", "&lt;")
+    private fun norm(s: String) = s.uppercase().replace(Regex("[^A-Z0-9]"), "")
 
-    private fun colIndex(header: List<String>, contains: String): Int {
-        for (i in header.indices) if (header[i].contains(contains)) return i
+    private fun colIdx(header: List<String>, needle: String): Int {
+        for (i in header.indices) if (header[i].replace("\n", " ").contains(needle)) return i
         return -1
     }
 
-    private fun colIndexAny(header: List<String>, candidates: List<String>): Int {
-        for (needle in candidates) {
-            val idx = colIndex(header, needle)
-            if (idx >= 0) return idx
-        }
-        return -1
-    }
-
-    private fun kvAny(rows: List<List<String>>, candidates: List<String>): String {
-        for (label in candidates) {
-            val v = kv(rows, label)
-            if (v.isNotBlank()) return v
-        }
-        return ""
-    }
-
-    private fun kv(rows: List<List<String>>, label: String): String {
-        for (row in rows) {
-            if (row.size >= 2) {
-                for (i in row.indices) {
-                    if (row[i].trim() == label) {
-                        val other = if (i == 0) row.getOrNull(1) else row.getOrNull(0)
-                        return other?.trim() ?: ""
-                    }
-                }
-            }
-        }
-        return ""
-    }
-
-    private fun normCode(s: String) = s.uppercase().replace(Regex("[^A-Z0-9]"), "")
-
-    private fun to12h(time: String): String {
-        val parts = time.trim().split(":")
-        if (parts.size < 2) return time
-        val h = parts[0].toIntOrNull() ?: return time
-        val m = parts[1]
+    private fun to12h(t: String): String {
+        val p = t.trim().split(":")
+        if (p.size < 2) return t
+        val h = p[0].toIntOrNull() ?: return t
         val period = if (h < 12) "ص" else "م"
         var h12 = h % 12
         if (h12 == 0) h12 = 12
-        return "$h12:$m $period"
+        return "$h12:${p[1]} $period"
     }
 
-    private fun daysToArabic(code: String): String {
-        val map = mapOf('U' to "الأحد", 'M' to "الاثنين", 'T' to "الثلاثاء", 'W' to "الأربعاء", 'H' to "الخميس", 'F' to "الجمعة", 'S' to "السبت")
-        return code.trim().map { map[it] ?: it.toString() }.joinToString("، ")
+    private fun daysAr(code: String): String {
+        val m = mapOf('U' to "الأحد", 'M' to "الاثنين", 'T' to "الثلاثاء", 'W' to "الأربعاء", 'H' to "الخميس", 'F' to "الجمعة", 'S' to "السبت")
+        return code.trim().mapNotNull { m[it] }.joinToString("، ")
     }
 
-    private fun attendanceColor(pct: Double): Triple<String, String, Boolean> {
-        return when {
-            pct <= 10.0 -> Triple("#EAF3DE", "#3B6D11", false)
-            pct <= 15.0 -> Triple("#FAEEDA", "#854F0B", false)
-            pct <= 25.0 -> Triple("#FCEBEB", "#A32D2D", false)
-            else -> Triple("#1a1a1a", "#ffffff", true)
-        }
+    private fun attColor(p: Double): Triple<String, String, Boolean> = when {
+        p <= 10.0 -> Triple("#EAF3DE", "#3B6D11", false)
+        p <= 15.0 -> Triple("#FAEEDA", "#854F0B", false)
+        p <= 25.0 -> Triple("#FCEBEB", "#A32D2D", false)
+        else -> Triple("#1a1a1a", "#ffffff", true)
     }
 
     private fun gradeColor(g: Double): String = when {
@@ -75,535 +41,425 @@ object DashboardHtmlBuilder {
         else -> "#1a1a1a"
     }
 
-    private fun warningColor(status: String): Triple<String, String, String> {
-        val s = status.trim()
-        return when {
-            s.isEmpty() || s == "-" -> Triple("#EAF3DE", "#3B6D11", "لا يوجد")
-            s.contains("اول") || s.contains("أول") -> Triple("#FAEEDA", "#854F0B", s)
-            s.contains("ثاني") -> Triple("#FCEBEB", "#A32D2D", s)
-            s.contains("ثالث") -> Triple("#1a1a1a", "#ffffff", s)
-            else -> Triple("#EAF3DE", "#3B6D11", s)
-        }
+    private fun warnColor(s: String): Pair<String, String> = when {
+        s.isEmpty() -> Pair("#EAF3DE", "#3B6D11")
+        s.contains("اول") || s.contains("أول") -> Pair("#FAEEDA", "#854F0B")
+        s.contains("ثاني") -> Pair("#FCEBEB", "#A32D2D")
+        s.contains("ثالث") -> Pair("#1a1a1a", "#ffffff")
+        else -> Pair("#EAF3DE", "#3B6D11")
     }
 
-    data class CourseInfo(
-        var code: String = "",
-        var nameAr: String = "",
-        var nameEn: String = "",
-        var section: String = "",
-        var days: String = "",
-        var timeFrom: String = "",
-        var timeTo: String = "",
-        var room: String = "",
-        var instructor: String = "",
-        var midtermDate: String = "",
-        var midtermTime: String = "",
-        var midtermRoom: String = "",
-        var finalDate: String = "",
-        var finalTime: String = "",
-        var finalRoom: String = "",
-        var attendancePct: Double? = null,
-        var midtermGrade: String = "",
-        var otherWorkGrade: String = "",
-        var finalGrade: String = "",
-        var gradeStatus: String = ""
-    )
+    class Course {
+        var code = ""
+        var nameAr = ""
+        var nameEn = ""
+        var section = ""
+        var days = ""
+        var from = ""
+        var to = ""
+        var room = ""
+        var instructor = ""
+        var midDate = ""
+        var midTime = ""
+        var midRoom = ""
+        var finDate = ""
+        var finTime = ""
+        var finRoom = ""
+        var att: Double? = null
+        var midGrade = ""
+        var workGrade = ""
+        var finGrade = ""
+        var total = ""
+        var gradeCase = ""
+    }
 
-    private fun buildCourseMap(): LinkedHashMap<String, CourseInfo> {
-        val map = LinkedHashMap<String, CourseInfo>()
+    private fun courses(): LinkedHashMap<String, Course> {
+        val map = LinkedHashMap<String, Course>()
 
         val reg = DataStore.registration
-        if (reg.isNotEmpty()) {
+        if (reg.size > 1) {
             val h = reg[0]
-            val codeIdx = colIndex(h, "رمز")
-            val nameIdx = colIndex(h, "اسم المقرر")
-            val secIdx = colIndex(h, "الشعبه").takeIf { it >= 0 } ?: colIndex(h, "الشعبة")
-            val daysIdx = colIndex(h, "الايام")
-            val fromIdx = colIndex(h, "من")
-            val toIdx = colIndex(h, "الى")
-            val roomIdx = colIndex(h, "القاعة")
-            val teacherIdx = colIndex(h, "اسم المدرس")
-            val midDateIdx = colIndex(h, "تاريخ امتحان المنتصف")
-            val midTimeIdx = colIndex(h, "وقت امتحان المنتصف")
-            val midRoomIdx = colIndex(h, "قاعة امتحان المنتصف")
-            val finDateIdx = colIndex(h, "تاريخ الامتحان النهائي")
-            val finTimeIdx = colIndex(h, "وقت الامتحان النهائي")
-            val finRoomIdx = colIndex(h, "قاعة الامتحان النهائي")
+            val ci = colIdx(h, "رمز"); val ni = colIdx(h, "اسم المقرر")
+            val si = colIdx(h, "الشعب"); val di = colIdx(h, "الايام")
+            val fi = colIdx(h, "من"); val ti = colIdx(h, "الى")
+            val ri = colIdx(h, "القاعة"); val li = colIdx(h, "اسم المدرس")
+            val mdi = colIdx(h, "تاريخ امتحان المنتصف"); val mti = colIdx(h, "وقت امتحان المنتصف")
+            val mri = colIdx(h, "قاعة امتحان المنتصف")
+            val fdi = colIdx(h, "تاريخ الامتحان النهائي"); val fti = colIdx(h, "وقت الامتحان النهائي")
+            val fri = colIdx(h, "قاعة الامتحان النهائي")
             for (r in 1 until reg.size) {
                 val row = reg[r]
-                fun cell(i: Int) = if (i in row.indices) row[i] else ""
-                val code = cell(codeIdx)
+                fun c(i: Int) = if (i in row.indices) row[i].trim() else ""
+                val code = c(ci)
                 if (code.isBlank()) continue
-                val info = CourseInfo(
-                    code = code,
-                    nameEn = cell(nameIdx),
-                    section = cell(secIdx),
-                    days = daysToArabic(cell(daysIdx)),
-                    timeFrom = to12h(cell(fromIdx)),
-                    timeTo = to12h(cell(toIdx)),
-                    room = cell(roomIdx),
-                    instructor = cell(teacherIdx),
-                    midtermDate = cell(midDateIdx),
-                    midtermTime = to12h(cell(midTimeIdx)),
-                    midtermRoom = cell(midRoomIdx),
-                    finalDate = cell(finDateIdx),
-                    finalTime = to12h(cell(finTimeIdx)),
-                    finalRoom = cell(finRoomIdx)
-                )
-                map[normCode(code)] = info
-            }
-        }
-
-        val att = DataStore.attendance
-        if (att.isNotEmpty()) {
-            val h = att[0]
-            val codeIdx = colIndex(h, "رمز")
-            val pctIdx = colIndex(h, "الغياب")
-            val nameIdx = colIndex(h, "اسم المقرر")
-            for (r in 1 until att.size) {
-                val row = att[r]
-                fun cell(i: Int) = if (i in row.indices) row[i] else ""
-                val code = cell(codeIdx)
-                if (code.isBlank()) continue
-                val key = normCode(code)
-                val info = map.getOrPut(key) { CourseInfo(code = code) }
-                if (info.nameAr.isBlank()) info.nameAr = cell(nameIdx)
-                val pctStr = cell(pctIdx).replace("%", "").trim()
-                info.attendancePct = pctStr.toDoubleOrNull()
+                val x = Course()
+                x.code = code
+                x.nameEn = c(ni); x.section = c(si)
+                x.days = daysAr(c(di)); x.from = to12h(c(fi)); x.to = to12h(c(ti))
+                x.room = c(ri); x.instructor = c(li)
+                x.midDate = c(mdi); x.midTime = to12h(c(mti)); x.midRoom = c(mri)
+                x.finDate = c(fdi); x.finTime = to12h(c(fti)); x.finRoom = c(fri)
+                map[norm(code)] = x
             }
         }
 
         val sg = DataStore.semesterGrades
-        if (sg.isNotEmpty()) {
+        if (sg.size > 1) {
             val h = sg[0]
-            val codeIdx = colIndex(h, "رمز")
-            val nameIdx = colIndex(h, "اسم المقرر")
-            val statusIdx = colIndex(h, "حالة العلامة")
-            val finalIdx = colIndex(h, "النهائي")
-            val otherIdx = colIndex(h, "أعمال اخرى").takeIf { it >= 0 } ?: colIndex(h, "أعمال أخرى")
-            val midIdx = colIndex(h, "المنتصف")
+            val ci = colIdx(h, "رمز"); val ni = colIdx(h, "اسم المقرر")
+            val mi = colIdx(h, "المنتصف"); val oi = colIdx(h, "أعمال")
+            val fi = colIdx(h, "النهائي"); val ti = colIdx(h, "العلامة")
+            val gi = colIdx(h, "حالة العلامة")
             for (r in 1 until sg.size) {
                 val row = sg[r]
-                fun cell(i: Int) = if (i in row.indices) row[i] else ""
-                val code = cell(codeIdx)
+                fun c(i: Int) = if (i in row.indices) row[i].trim() else ""
+                val code = c(ci)
                 if (code.isBlank()) continue
-                val key = normCode(code)
-                val info = map.getOrPut(key) { CourseInfo(code = code) }
-                if (info.nameAr.isBlank()) info.nameAr = cell(nameIdx)
-                info.gradeStatus = cell(statusIdx)
-                info.finalGrade = cell(finalIdx)
-                info.otherWorkGrade = cell(otherIdx)
-                info.midtermGrade = cell(midIdx)
+                val x = map.getOrPut(norm(code)) { Course().also { it.code = code } }
+                if (x.nameAr.isBlank()) x.nameAr = c(ni)
+                x.midGrade = c(mi); x.workGrade = c(oi); x.finGrade = c(fi)
+                x.total = c(ti); x.gradeCase = c(gi)
             }
         }
 
+        val att = DataStore.attendance
+        if (att.size > 1) {
+            val h = att[0]
+            val ci = colIdx(h, "رمز"); val ni = colIdx(h, "اسم")
+            val pi = colIdx(h, "الغياب")
+            for (r in 1 until att.size) {
+                val row = att[r]
+                fun c(i: Int) = if (i in row.indices) row[i].trim() else ""
+                val code = c(ci)
+                if (code.isBlank()) continue
+                val x = map.getOrPut(norm(code)) { Course().also { it.code = code } }
+                if (x.nameAr.isBlank()) x.nameAr = c(ni)
+                x.att = c(pi).replace("%", "").trim().toDoubleOrNull()
+            }
+        }
         return map
     }
 
     fun build(): String {
         val sb = StringBuilder()
-        sb.append(
-            """
-            <html dir="rtl" lang="ar"><head><meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>
-                body { font-family: sans-serif; background:#f4f4f4; margin:0; padding:0; }
-                .tabs { display:flex; position:sticky; top:0; background:#2c3e50; z-index:20; }
-                .tab { flex:1; text-align:center; padding:12px 2px; color:#fff; cursor:pointer; font-size:12px; }
-                .tab.active { background:#34495e; border-bottom:3px solid #3498db; }
-                .page { display:none; padding:12px; }
-                .page.active { display:block; }
-                .card { background:#fff; border-radius:8px; padding:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.15); }
-                .card.green { border-right:6px solid #27ae60; }
-                .card.red { border-right:6px solid #e74c3c; }
-                .card.blue { border-right:6px solid #3498db; }
-                .card-title { font-weight:bold; font-size:15px; margin-bottom:4px; }
-                .card-sub { font-size:13px; color:#555; }
-                .filters { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
-                .chip { background:#eee; border-radius:16px; padding:6px 12px; font-size:13px; cursor:pointer; }
-                .chip.active { background:#3498db; color:#fff; }
-                .sem-header { background:#2c3e50; color:#fff; padding:8px; border-radius:6px; margin:14px 0 8px; font-size:13px; }
-                .cat-header { background:#e9edf1; padding:8px 10px; border-radius:6px; margin:14px 0 8px; font-size:13px; }
-                .row-kv { display:flex; justify-content:space-between; font-size:13px; padding:2px 0; border-bottom:1px dashed #eee; }
-                .empty { text-align:center; color:#999; padding:30px; }
-                .stu-card { background:#fff; border-radius:12px; padding:14px; margin-bottom:10px; }
-                .avatar { width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:15px; }
-                .kv-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px 12px; margin-top:8px; }
-                .kv-item .lbl { font-size:10px; color:#999; }
-                .kv-item .val { font-size:13px; }
-                .course-row { display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid #eee; background:#fff; cursor:pointer; }
-                .course-row:last-child { border-bottom:none; }
-                .att-circle { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:bold; flex-shrink:0; }
-                .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:100; align-items:center; justify-content:center; }
-                .overlay.show { display:flex; }
-                .modal { background:#fff; border-radius:14px; padding:16px; width:85%; max-width:340px; }
-                .modal-close { float:left; font-size:18px; cursor:pointer; }
-                .badge-gold { background:#caa23e; color:#fff; font-size:11px; padding:3px 10px; border-radius:12px; }
-            </style></head><body>
-            <div class="tabs">
-                <div class="tab active" onclick="showPage('home')" style="flex:1">الرئيسية</div>
-                <div class="tab" onclick="showPage('plan')" style="flex:1">الخطة الدراسية</div>
-                <div class="tab" onclick="showPage('grades')" style="flex:1">كشف الدرجات</div>
-                <div class="tab" onclick="showPage('account')" style="flex:1">كشف الحساب</div>
-                <div onclick="if(typeof AndroidBridge!=='undefined') AndroidBridge.refresh();" style="padding:12px 10px;color:#fff;cursor:pointer;font-size:12px;background:#1a252f">↻</div>
-            </div>
-            """.trimIndent()
-        )
-
-        sb.append("<div id='home' class='page active'>")
-        sb.append("<div style='font-size:10px;color:#bbb;padding:4px;word-break:break-all'>${DataStore.debugInfo}</div>")
-        sb.append(buildHomeSection()).append("</div>")
-        sb.append("<div id='plan' class='page'>").append(buildPlanSection()).append("</div>")
-        sb.append("<div id='grades' class='page'>").append(buildGradesSection()).append("</div>")
-        sb.append("<div id='account' class='page'>").append(buildAccountSection()).append("</div>")
-
-        sb.append(buildModalAndScript())
-        sb.append("</body></html>")
+        sb.append(HEAD)
+        sb.append("<div id='home' class='page active'>").append(home()).append("</div>")
+        sb.append("<div id='plan' class='page'>").append(plan()).append("</div>")
+        sb.append("<div id='grades' class='page'>").append(grades()).append("</div>")
+        sb.append("<div id='account' class='page'>").append(account()).append("</div>")
+        sb.append(SCRIPT)
         return sb.toString()
     }
 
-    private fun buildHomeSection(): String {
-        val sb = StringBuilder()
-        val basic = DataStore.studentBasic
-        val regTimes = DataStore.regTimes
-
-        val name = kv(basic, "Name").ifBlank { "الطالب" }
-        val college = kv(basic, "The College")
-        val gpa = kv(basic, "المعدل التراكمي")
-        val warningStatus = kv(basic, "حالة الانذار الاكاديمي")
-        val (bg, fg, _) = warningColor(warningStatus)
+    private fun home(): String {
+        val d = DataStore
+        val name = d.f("studentName").ifBlank { "الطالب" }
+        val (bg, fg) = warnColor(d.f("studentWarning"))
         val initials = name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }
 
-        val gradExpected = kv(regTimes, "متوقع تخرجه")
-        val regStart = kv(regTimes, "بداية تاريخ التسجيل")
-        val regEnd = kv(regTimes, "نهاية تاريخ التسجيل")
-        val addDropStart = kv(regTimes, "بداية تاريخ السحب و الأضافة").ifBlank { kv(regTimes, "بداية تاريخ السحب والأضافة") }
-        val addDropEnd = kv(regTimes, "نهاية تاريخ السحب والأضافة").ifBlank { kv(regTimes, "نهاية تاريخ السحب و الأضافة") }
-
-        sb.append("<div class='stu-card'>")
+        val sb = StringBuilder()
+        sb.append("<div class='card'>")
         sb.append("<div style='display:flex;align-items:center;gap:12px'>")
         sb.append("<div class='avatar' style='background:$bg;color:$fg'>${esc(initials)}</div>")
-        sb.append("<div><div style='font-size:15px;font-weight:bold'>${esc(name)}</div><div style='font-size:12px;color:#777'>${esc(college)}</div></div>")
+        sb.append("<div><div class='big'>${esc(name)}</div><div class='muted'>${esc(d.f("studentCollege"))}</div></div></div>")
+        sb.append("<div class='grid'>")
+        sb.append(kvBox("المعدل التراكمي", d.f("studentGpa")))
+        sb.append(kvBox("متوقع تخرجه", d.f("gradExpected")))
+        sb.append(kvBox("المرشد الأكاديمي", d.f("advisor")))
+        sb.append(kvBox("الوضع الأكاديمي", d.f("academicStatus")))
         sb.append("</div>")
-        sb.append("<div class='kv-grid'>")
-        sb.append("<div class='kv-item'><div class='lbl'>المعدل التراكمي</div><div class='val'>${esc(gpa)}</div></div>")
-        sb.append("<div class='kv-item'><div class='lbl'>متوقع تخرجه</div><div class='val'>${esc(gradExpected)}</div></div>")
-        sb.append("</div>")
-        if (regStart.isNotBlank() || addDropStart.isNotBlank()) {
-            sb.append("<div style='border-top:1px solid #eee;margin-top:10px;padding-top:8px'>")
-            if (regStart.isNotBlank()) sb.append("<div class='row-kv'><span>فترة التسجيل</span><span>${esc(regStart)} إلى ${esc(regEnd)}</span></div>")
-            if (addDropStart.isNotBlank()) sb.append("<div class='row-kv'><span>فترة السحب والإضافة</span><span>${esc(addDropStart)} إلى ${esc(addDropEnd)}</span></div>")
+        if (d.f("regStart").isNotBlank() || d.f("addDropStart").isNotBlank()) {
+            sb.append("<div class='sep'>")
+            if (d.f("regStart").isNotBlank())
+                sb.append("<div class='kv'><span>فترة التسجيل</span><span>${esc(d.f("regStart"))} إلى ${esc(d.f("regEnd"))}</span></div>")
+            if (d.f("addDropStart").isNotBlank())
+                sb.append("<div class='kv'><span>السحب والإضافة</span><span>${esc(d.f("addDropStart"))} إلى ${esc(d.f("addDropEnd"))}</span></div>")
             sb.append("</div>")
         }
         sb.append("</div>")
 
-        val courses = buildCourseMap()
-        if (courses.isEmpty()) {
-            sb.append("<div class='empty'>ما قدرنا نجيب المواد المسجلة</div>")
-        } else {
-            sb.append("<div style='background:#fff;border-radius:12px;overflow:hidden'>")
-            for ((key, c) in courses) {
-                val displayName = c.nameAr.ifBlank { c.nameEn }
-                val circleHtml: String
-                if (c.attendancePct != null) {
-                    val (bg2, fg2, isBlack) = attendanceColor(c.attendancePct!!)
-                    val alertIcon = if (isBlack) "<span style='margin-left:4px'>&#9888;</span>" else ""
-                    circleHtml = "$alertIcon<div class='att-circle' style='background:$bg2;color:$fg2'>${c.attendancePct!!.toInt()}%</div>"
-                } else {
-                    circleHtml = "<div class='att-circle' style='background:#eee;color:#999'>-</div>"
-                }
-                sb.append("<div class='course-row' onclick=\"openModal('$key')\">")
-                sb.append("<div><div style='font-size:13px;font-weight:bold'>${esc(displayName)}</div>")
-                sb.append("<div style='font-size:11px;color:#777;margin-top:3px'>${esc(c.days)} — ${esc(c.timeFrom)} - ${esc(c.timeTo)} — ${esc(c.room)}</div></div>")
-                sb.append("<div style='display:flex;align-items:center'>$circleHtml</div>")
-                sb.append("</div>")
-            }
-            sb.append("</div>")
-
-            sb.append("<script>var COURSES = {")
-            for ((key, c) in courses) {
-                sb.append("\"$key\": {")
-                sb.append("name: \"${esc(c.nameAr.ifBlank { c.nameEn })}\",")
-                sb.append("section: \"${esc(c.section)}\",")
-                sb.append("instructor: \"${esc(c.instructor)}\",")
-                sb.append("midtermGrade: \"${esc(c.midtermGrade)}\",")
-                sb.append("otherWorkGrade: \"${esc(c.otherWorkGrade)}\",")
-                sb.append("finalGrade: \"${esc(c.finalGrade)}\",")
-                sb.append("gradeStatus: \"${esc(c.gradeStatus)}\",")
-                sb.append("midtermDate: \"${esc(c.midtermDate)}\",")
-                sb.append("midtermTime: \"${esc(c.midtermTime)}\",")
-                sb.append("midtermRoom: \"${esc(c.midtermRoom)}\",")
-                sb.append("finalDate: \"${esc(c.finalDate)}\",")
-                sb.append("finalTime: \"${esc(c.finalTime)}\",")
-                sb.append("finalRoom: \"${esc(c.finalRoom)}\"")
-                sb.append("},")
-            }
-            sb.append("};</script>")
+        val cs = courses()
+        if (cs.isEmpty()) {
+            sb.append("<div class='empty'>ما فيه مواد مسجلة</div>")
+            return sb.toString()
         }
+        sb.append("<div class='list'>")
+        for ((k, c) in cs) {
+            val disp = c.nameAr.ifBlank { c.nameEn }
+            val circle = if (c.att != null) {
+                val (b2, f2, black) = attColor(c.att!!)
+                val warn = if (black) "<span style='margin-left:4px;color:#E24B4A'>&#9888;</span>" else ""
+                "$warn<div class='circle' style='background:$b2;color:$f2'>${c.att!!.toInt()}%</div>"
+            } else "<div class='circle' style='background:#eee;color:#999'>-</div>"
+            sb.append("<div class='row' onclick=\"openModal('$k')\">")
+            sb.append("<div><div class='rowTitle'>${esc(disp)}</div>")
+            sb.append("<div class='rowSub'>${esc(c.days)} — ${esc(c.from)} - ${esc(c.to)} — ${esc(c.room)}</div></div>")
+            sb.append("<div style='display:flex;align-items:center'>$circle</div></div>")
+        }
+        sb.append("</div>")
+
+        sb.append("<script>var C={")
+        for ((k, c) in cs) {
+            sb.append("\"$k\":{n:\"${esc(c.nameAr.ifBlank { c.nameEn })}\",s:\"${esc(c.section)}\",i:\"${esc(c.instructor)}\",")
+            sb.append("mg:\"${esc(c.midGrade)}\",wg:\"${esc(c.workGrade)}\",fg:\"${esc(c.finGrade)}\",tg:\"${esc(c.total)}\",gc:\"${esc(c.gradeCase)}\",")
+            sb.append("md:\"${esc(c.midDate)}\",mt:\"${esc(c.midTime)}\",mr:\"${esc(c.midRoom)}\",")
+            sb.append("fd:\"${esc(c.finDate)}\",ft:\"${esc(c.finTime)}\",fr:\"${esc(c.finRoom)}\"},")
+        }
+        sb.append("};</script>")
         return sb.toString()
     }
 
-    private fun buildPlanSection(): String {
-        val planDetails = DataStore.planDetails
-        val categoryNames = DataStore.categoryNames
-        if (planDetails.isEmpty()) return "<div class='empty'>ما قدرنا نجيب الخطة الدراسية</div>"
+    private fun kvBox(label: String, value: String) =
+        "<div><div class='lbl'>${esc(label)}</div><div class='val'>${esc(value.ifBlank { "-" })}</div></div>"
 
-        val currentCodes = buildCourseMap().keys
-
+    private fun plan(): String {
+        val details = DataStore.planDetails
+        if (details.isEmpty()) return "<div class='empty'>ما قدرنا نجيب الخطة الدراسية</div>"
+        val current = courses().keys
         val sb = StringBuilder()
-        val keys = planDetails.keys.sorted()
-        for (idx in keys) {
-            val rows = planDetails[idx] ?: continue
-            if (rows.isEmpty()) continue
-            val header = rows[0]
-            val studiedIdx = colIndex(header, "درسها")
-            val doneIdx = colIndex(header, "اجتازها")
-            val nameIdx = colIndex(header, "اسم المقرر")
-            val codeIdx = colIndex(header, "رمز")
-            val hoursIdx = colIndex(header, "عدد الساعات")
-            val catName = categoryNames.getOrNull(idx) ?: "فئة ${idx + 1}"
+        sb.append("<div class='legend'><span><i style='background:#27ae60'></i>مكتملة</span><span><i style='background:#3498db'></i>قيد الدراسة</span><span><i style='background:#e74c3c'></i>لم تُجتز</span></div>")
 
-            val displayRows = mutableListOf<Triple<String, String, String>>()
+        for (idx in details.keys.sorted()) {
+            val rows = details[idx] ?: continue
+            if (rows.size < 2) continue
+            val h = rows[0]
+            val si = colIdx(h, "درسها"); val pi = colIdx(h, "اجتازها")
+            val ni = colIdx(h, "اسم المقرر"); val ci = colIdx(h, "رمز"); val hi = colIdx(h, "عدد الساعات")
+            val stat = DataStore.planStats.getOrNull(idx)
+            val catName = stat?.getOrNull(0) ?: DataStore.planNames.getOrNull(idx) ?: "فئة ${idx + 1}"
+
+            val items = mutableListOf<String>()
             for (r in 1 until rows.size) {
                 val row = rows[r]
-                val studied = studiedIdx >= 0 && studiedIdx < row.size && row[studiedIdx].trim() == "نعم"
-                if (!studied) continue
-                val passed = doneIdx >= 0 && doneIdx < row.size && row[doneIdx].trim() == "نعم"
-                val name = if (nameIdx >= 0 && nameIdx < row.size) row[nameIdx] else "مقرر"
-                val code = if (codeIdx >= 0 && codeIdx < row.size) row[codeIdx] else ""
-                val hours = if (hoursIdx >= 0 && hoursIdx < row.size) row[hoursIdx] else ""
-                val inProgress = currentCodes.contains(normCode(code))
-                val cls = when {
-                    inProgress -> "blue"
-                    passed -> "green"
-                    else -> "red"
-                }
-                val statusLabel = when {
-                    inProgress -> "قيد الدراسة"
-                    passed -> "مكتملة"
-                    else -> "لم تُجتز"
-                }
-                displayRows.add(Triple(name, "${esc(code)} — $hours ساعات — $statusLabel", cls))
+                fun c(i: Int) = if (i in row.indices) row[i].trim() else ""
+                if (c(si) != "نعم") continue
+                val passed = c(pi) == "نعم"
+                val code = c(ci)
+                val inProg = current.contains(norm(code))
+                val color = when { inProg -> "#3498db"; passed -> "#27ae60"; else -> "#e74c3c" }
+                val label = when { inProg -> "قيد الدراسة"; passed -> "مكتملة"; else -> "لم تُجتز" }
+                items.add("<div class='pcard' style='border-right:5px solid $color'><div class='rowTitle'>${esc(c(ni))}</div><div class='rowSub'>${esc(code)} — ${esc(c(hi))} ساعات — $label</div></div>")
             }
-            if (displayRows.isEmpty()) continue
-
-            sb.append("<div class='cat-header'><div style='font-weight:bold'>${esc(catName)}</div></div>")
-            for ((name, sub, cls) in displayRows) {
-                sb.append("<div class='card $cls'><div class='card-title'>${esc(name)}</div><div class='card-sub'>$sub</div></div>")
-            }
+            if (items.isEmpty()) continue
+            sb.append("<div class='cat'><div class='catName'>${esc(catName)}</div>")
+            if (stat != null && stat.size >= 4)
+                sb.append("<div class='catStats'>مطلوبة: ${esc(stat[1])} · درسها: ${esc(stat[2])} · مجتازة: ${esc(stat[3])}</div>")
+            sb.append("</div>")
+            items.forEach { sb.append(it) }
         }
-        if (sb.isEmpty()) return "<div class='empty'>ما فيه مواد مدروسة بعد</div>"
+        if (sb.length < 200) return "<div class='empty'>ما فيه مواد مدروسة</div>"
         return sb.toString()
     }
 
-    private fun buildGradesSection(): String {
-        val rows = DataStore.grades
-        val summary = DataStore.gradesSummary
-        if (rows.isEmpty()) return "<div class='empty'>ما قدرنا نجيب كشف الدرجات</div>"
-
-        val gpa = kv(summary, "المعدل التراكمي")
-        val totalHours = kv(summary, "مجموع الساعات التراكمية")
-        val passedHours = kv(summary, "الساعات التى نجح بها")
-        val onHonor = kv(summary, "على لائحة الشرف")
-        val planHours = kv(summary, "ساعات الخطة الدراسية")
-        val remaining = try {
-            val p = planHours.toDoubleOrNull()
-            val t = totalHours.toDoubleOrNull()
-            if (p != null && t != null) (p - t).toInt().toString() else ""
-        } catch (e: Exception) { "" }
-
-        val header = rows[0]
-        val nameIdx = colIndex(header, "اسم المقرر")
-        val codeIdx = colIndex(header, "رمز")
-        val finalIdx = colIndex(header, "النهائي")
-        val gradeIdx = colIndex(header, "العلامة")
-        val statusIdx = colIndex(header, "حالة العلامه").takeIf { it >= 0 } ?: colIndex(header, "حالة العلامة")
-
+    private fun grades(): String {
+        val d = DataStore
+        val rows = d.transcript
         val sb = StringBuilder()
-        sb.append("<div class='stu-card'>")
-        sb.append("<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'>")
-        sb.append("<div style='font-size:12px;color:#777'>ملخص كشف الدرجات</div>")
-        if (onHonor == "نعم") sb.append("<div class='badge-gold'>لائحة الشرف</div>")
-        sb.append("</div>")
-        sb.append("<div class='kv-grid'>")
-        sb.append("<div class='kv-item'><div class='lbl'>المعدل التراكمي</div><div class='val' style='font-size:16px;font-weight:bold'>${esc(gpa)}</div></div>")
-        sb.append("<div class='kv-item'><div class='lbl'>الساعات التراكمية</div><div class='val' style='font-size:16px;font-weight:bold'>${esc(totalHours)}</div></div>")
-        sb.append("<div class='kv-item'><div class='lbl'>ساعات ناجحة</div><div class='val' style='font-size:16px;font-weight:bold'>${esc(passedHours)}</div></div>")
-        sb.append("<div class='kv-item'><div class='lbl'>متبقي على الخطة</div><div class='val' style='font-size:16px;font-weight:bold'>${esc(remaining)}</div></div>")
+
+        val total = d.f("totalHours").toDoubleOrNull()
+        val planH = d.f("planHours").toDoubleOrNull()
+        val remaining = if (total != null && planH != null) (planH - total).toInt().toString() else "-"
+
+        sb.append("<div class='card'>")
+        sb.append("<div style='display:flex;justify-content:space-between;align-items:center'>")
+        sb.append("<div class='muted'>ملخص كشف الدرجات</div>")
+        if (d.f("honorList") == "نعم") sb.append("<div class='gold'>لائحة الشرف</div>")
+        sb.append("</div><div class='grid'>")
+        sb.append(kvBox("المعدل التراكمي", d.f("gpa")))
+        sb.append(kvBox("الساعات التراكمية", d.f("totalHours")))
+        sb.append(kvBox("ساعات ناجحة", d.f("passedHours")))
+        sb.append(kvBox("متبقي على الخطة", remaining))
         sb.append("</div></div>")
 
-        sb.append(
-            """
-            <div class='filters' style='margin-bottom:6px'>
-                <div style='display:flex;gap:8px;flex-wrap:wrap;font-size:10px;color:#777'>
-                    <span><span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#1D9E75'></span> ٩٠-١٠٠</span>
-                    <span><span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#0F6E56'></span> ٨٠-٨٩</span>
-                    <span><span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#378ADD'></span> ٧٠-٧٩</span>
-                    <span><span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#BA7517'></span> ٦٠-٦٩</span>
-                    <span><span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#E24B4A'></span> ٥٠-٥٩</span>
-                    <span><span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#1a1a1a'></span> اقل من ٥٠</span>
-                </div>
-            </div>
-            <div class='filters'>
-                <div class='chip active' onclick="filterGrades('all')">الكل</div>
-                <div class='chip' onclick="filterGrades('semester')">حسب الفصل</div>
-            </div>
-            """.trimIndent()
-        )
+        if (rows.isEmpty()) {
+            sb.append("<div class='empty'>ما قدرنا نجيب كشف الدرجات</div>")
+            return sb.toString()
+        }
 
-        for (r in 1 until rows.size) {
-            val row = rows[r]
-            if (row.size <= 3) {
-                sb.append("<div class='sem-header'>${esc(row.joinToString(" "))}</div>")
+        sb.append("<div class='legend2'>")
+        listOf("#1D9E75" to "٩٠-١٠٠", "#0F6E56" to "٨٠-٨٩", "#378ADD" to "٧٠-٧٩", "#BA7517" to "٦٠-٦٩", "#E24B4A" to "٥٠-٥٩", "#1a1a1a" to "أقل من ٥٠")
+            .forEach { (c, t) -> sb.append("<span><i style='background:$c'></i>$t</span>") }
+        sb.append("</div>")
+        sb.append("<div class='filters'><div class='chip active' onclick=\"fg(this,'all')\">الكل</div><div class='chip' onclick=\"fg(this,'sem')\">حسب الفصل</div></div>")
+
+        for (row in rows) {
+            if (row.size >= 2 && row[0] == "__TERM__") {
+                sb.append("<div class='term'>${esc(row[1])}</div>")
                 continue
             }
-            val name = if (nameIdx >= 0 && nameIdx < row.size) row[nameIdx] else ""
-            val code = if (codeIdx >= 0 && codeIdx < row.size) row[codeIdx] else ""
-            val finalGrade = if (finalIdx >= 0 && finalIdx < row.size) row[finalIdx] else ""
-            val gradeVal = if (gradeIdx >= 0 && gradeIdx < row.size) row[gradeIdx] else ""
-            val status = if (statusIdx >= 0 && statusIdx < row.size) row[statusIdx] else ""
-            val numeric = finalGrade.toDoubleOrNull() ?: gradeVal.toDoubleOrNull()
-            val color: String = if (numeric != null) {
-                gradeColor(numeric)
-            } else if (status.contains("ناجح")) {
-                "#1D9E75"
-            } else if (status.contains("راسب")) {
-                "#E24B4A"
-            } else {
-                "#ccc"
+            if (row.size < 8) continue
+            val code = row[0]; val name = row[1]
+            val mid = row[3]; val work = row[4]; val fin = row[5]
+            val totalG = row[6]; val case = row[7]
+            val num = totalG.toDoubleOrNull()
+            val color = when {
+                num != null -> gradeColor(num)
+                case.contains("ناجح") -> "#1D9E75"
+                case.contains("منسحب") -> "#999"
+                else -> "#E24B4A"
             }
-            sb.append("<div class='card grade-card' style='border-right:6px solid $color'>")
-            sb.append("<div class='card-title'>${esc(name)}</div><div class='card-sub'>${esc(code)}</div>")
+            sb.append("<div class='pcard' style='border-right:5px solid $color'>")
+            sb.append("<div class='rowTitle'>${esc(name)}</div>")
+            sb.append("<div class='rowSub'>${esc(code)}${if (num != null) " — ${esc(totalG)}" else ""}</div>")
+            sb.append("<div class='rowSub' style='margin-top:3px'>منتصف: ${esc(mid)} · أعمال: ${esc(work)} · نهائي: ${esc(fin)}</div>")
             sb.append("</div>")
         }
         return sb.toString()
     }
 
-    private fun buildAccountSection(): String {
-        val rows = DataStore.account
-        val payment = DataStore.payment
-        val balance = DataStore.accountBalance
-        if (rows.isEmpty()) return "<div class='empty'>ما قدرنا نجيب كشف الحساب</div>"
-
-        var nextInstallment = ""
-        if (payment.isNotEmpty()) {
-            val h = payment[0]
-            val paidIdx = colIndex(h, "تم دفع")
-            val amountIdx = colIndex(h, "القسط")
-            for (r in 1 until payment.size) {
-                val row = payment[r]
-                if (paidIdx in row.indices && row[paidIdx].trim() == "لا") {
-                    nextInstallment = if (amountIdx in row.indices) row[amountIdx] else ""
-                    break
-                }
-            }
-        }
-
-        val header = rows[0]
-        val dateIdx = colIndex(header, "التاريخ")
-        val typeIdx = colIndex(header, "نوع الوثيقة")
-        val feesIdx = colIndex(header, "الرسوم")
-        val paidAmountIdx = colIndex(header, "المدفوع")
-
+    private fun account(): String {
+        val d = DataStore
         val sb = StringBuilder()
-        sb.append("<div class='stu-card'>")
-        sb.append("<div style='font-size:12px;color:#777;margin-bottom:8px'>ملخص الحساب</div>")
-        sb.append("<div class='kv-grid'>")
-        sb.append("<div class='kv-item'><div class='lbl'>الرصيد المطلوب</div><div class='val' style='font-size:16px;font-weight:bold;color:#E24B4A'>${esc(balance)}</div></div>")
-        sb.append("<div class='kv-item'><div class='lbl'>القسط القادم</div><div class='val' style='font-size:16px;font-weight:bold'>${esc(nextInstallment)}</div></div>")
+
+        var nextInst = ""
+        if (d.f("inst1Paid") == "لا") nextInst = d.f("inst1")
+        else if (d.f("inst2Paid") == "لا") nextInst = d.f("inst2")
+        else if (d.f("inst3Paid") == "لا") nextInst = d.f("inst3")
+
+        sb.append("<div class='card'><div class='muted'>ملخص الحساب</div><div class='grid'>")
+        sb.append("<div><div class='lbl'>الرصيد المطلوب</div><div class='val' style='color:#E24B4A;font-weight:bold'>${esc(d.f("balance"))}</div></div>")
+        sb.append(kvBox("القسط القادم", nextInst))
+        sb.append("</div>")
+        sb.append("<div class='sep'>")
+        sb.append("<div class='kv'><span>القسط الأول</span><span>${esc(d.f("inst1"))} — ${if (d.f("inst1Paid") == "لا") "غير مدفوع" else "مدفوع"}</span></div>")
+        sb.append("<div class='kv'><span>القسط الثاني</span><span>${esc(d.f("inst2"))} — ${if (d.f("inst2Paid") == "لا") "غير مدفوع" else "مدفوع"}</span></div>")
+        sb.append("<div class='kv'><span>القسط الثالث</span><span>${esc(d.f("inst3"))} — ${if (d.f("inst3Paid") == "لا") "غير مدفوع" else "مدفوع"}</span></div>")
         sb.append("</div></div>")
 
-        sb.append(
-            """
-            <div class='filters'>
-                <div class='chip active' onclick="filterAccount('recent')">آخر 3 أشهر</div>
-                <div class='chip' onclick="filterAccount('all')">الكشف الكامل</div>
-            </div>
-            """.trimIndent()
-        )
+        val rows = d.account
+        if (rows.size < 2) {
+            sb.append("<div class='empty'>ما قدرنا نجيب كشف الحساب</div>")
+            return sb.toString()
+        }
+        val h = rows[0]
+        val di = colIdx(h, "التاريخ"); val ti = colIdx(h, "نوع الوثيقة")
+        val fi = colIdx(h, "الرسوم"); val pi = colIdx(h, "المدفوع"); val ci = colIdx(h, "نوع المطالبة")
 
-        sb.append("<div id='accountList' style='background:#fff;border-radius:12px;overflow:hidden'>")
+        sb.append("<div class='filters'><div class='chip active' onclick=\"fa(this,'recent')\">آخر 3 أشهر</div><div class='chip' onclick=\"fa(this,'all')\">الكشف الكامل</div></div>")
+        sb.append("<div class='list'>")
         for (r in 1 until rows.size) {
             val row = rows[r]
-            fun cell(i: Int) = if (i in row.indices) row[i] else ""
-            val date = cell(dateIdx)
-            val type = cell(typeIdx)
-            val fees = cell(feesIdx)
-            val paidAmt = cell(paidAmountIdx)
-            val isDebit = fees.isNotBlank() && fees != "-"
-            val amountLabel = if (isDebit) fees else paidAmt
+            fun c(i: Int) = if (i in row.indices) row[i].trim() else ""
+            val fees = c(fi); val paid = c(pi)
+            val isDebit = fees.isNotBlank()
+            val amount = if (isDebit) fees else paid
             val color = if (isDebit) "#E24B4A" else "#1D9E75"
             val sign = if (isDebit) "-" else "+"
-            sb.append("<div class='account-row' data-date=\"${esc(date)}\" style='display:flex;justify-content:space-between;padding:11px 12px;border-bottom:1px solid #eee'>")
-            sb.append("<div><div style='font-size:13px'>${esc(type)}</div><div style='font-size:11px;color:#999'>${esc(date)}</div></div>")
-            sb.append("<div style='font-size:13px;color:$color'>${esc(amountLabel)}$sign</div>")
-            sb.append("</div>")
+            val label = c(ci).ifBlank { c(ti) }
+            sb.append("<div class='arow' data-d=\"${esc(c(di))}\">")
+            sb.append("<div><div class='rowTitle' style='font-size:13px'>${esc(label)}</div><div class='rowSub'>${esc(c(di))}</div></div>")
+            sb.append("<div style='color:$color;font-size:13px'>$sign${esc(amount)}</div></div>")
         }
         sb.append("</div>")
         return sb.toString()
     }
 
-    private fun buildModalAndScript(): String {
-        return """
-            <div class='overlay' id='overlay' onclick="if(event.target===this) closeModal()">
-                <div class='modal'>
-                    <span class='modal-close' onclick="closeModal()">&times;</span>
-                    <div id='mName' style='font-size:15px;font-weight:bold;margin-bottom:10px'></div>
-                    <div class='row-kv'><span>الشعبة</span><span id='mSection'></span></div>
-                    <div class='row-kv'><span>المدرس</span><span id='mInstructor'></span></div>
-                    <div class='row-kv'><span>علامة المنتصف</span><span id='mMid'></span></div>
-                    <div class='row-kv'><span>أعمال أخرى</span><span id='mOther'></span></div>
-                    <div class='row-kv'><span>العلامة النهائية</span><span id='mFinal'></span></div>
-                    <div class='row-kv'><span>امتحان المنتصف</span><span id='mMidExam'></span></div>
-                    <div class='row-kv'><span>الامتحان النهائي</span><span id='mFinalExam'></span></div>
-                </div>
-            </div>
-            <script>
-            function showPage(id) {
-                document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
-                document.getElementById(id).classList.add('active');
-                document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
-                event.currentTarget.classList.add('active');
-            }
-            function openModal(key) {
-                var c = (typeof COURSES !== 'undefined') ? COURSES[key] : null;
-                if (!c) return;
-                document.getElementById('mName').textContent = c.name;
-                document.getElementById('mSection').textContent = c.section || '-';
-                document.getElementById('mInstructor').textContent = c.instructor || '-';
-                document.getElementById('mMid').textContent = c.midtermGrade || '-';
-                document.getElementById('mOther').textContent = c.otherWorkGrade || '-';
-                document.getElementById('mFinal').textContent = c.finalGrade || (c.gradeStatus || 'لسه ما صدرت');
-                document.getElementById('mMidExam').textContent = (c.midtermDate ? (c.midtermDate + ' — ' + c.midtermTime + ' — ' + c.midtermRoom) : '-');
-                document.getElementById('mFinalExam').textContent = (c.finalDate ? (c.finalDate + ' — ' + c.finalTime + ' — ' + c.finalRoom) : '-');
-                document.getElementById('overlay').classList.add('show');
-            }
-            function closeModal() {
-                document.getElementById('overlay').classList.remove('show');
-            }
-            function filterGrades(mode) {
-                document.querySelectorAll('#grades .chip').forEach(function(c){c.classList.remove('active');});
-                event.currentTarget.classList.add('active');
-                document.querySelectorAll('#grades .sem-header').forEach(function(h){
-                    h.style.display = (mode === 'semester') ? 'block' : 'none';
-                });
-            }
-            function filterAccount(mode) {
-                document.querySelectorAll('#account .chip').forEach(function(c){c.classList.remove('active');});
-                event.currentTarget.classList.add('active');
-                var rows = document.querySelectorAll('.account-row');
-                var cutoff = new Date();
-                cutoff.setMonth(cutoff.getMonth() - 3);
-                rows.forEach(function(row){
-                    if (mode === 'all') { row.style.display = 'flex'; return; }
-                    var dateStr = row.getAttribute('data-date');
-                    var parts = dateStr.split('-');
-                    var d = parts.length === 3 ? new Date(parts[2], parts[1]-1, parts[0]) : null;
-                    row.style.display = (d && d >= cutoff) ? 'flex' : 'none';
-                });
-            }
-            filterAccount('recent');
-            </script>
-        """.trimIndent()
-    }
+    private val HEAD = """
+        <html dir="rtl" lang="ar"><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>
+        body{font-family:sans-serif;background:#f2f3f5;margin:0}
+        .tabs{display:flex;position:sticky;top:0;background:#2c3e50;z-index:20}
+        .tab{flex:1;text-align:center;padding:12px 2px;color:#fff;font-size:12px;cursor:pointer}
+        .tab.active{background:#34495e;border-bottom:3px solid #3498db}
+        .page{display:none;padding:12px}
+        .page.active{display:block}
+        .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px}
+        .avatar{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold}
+        .big{font-size:15px;font-weight:bold}
+        .muted{font-size:12px;color:#888}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:10px}
+        .lbl{font-size:10px;color:#999}
+        .val{font-size:14px}
+        .sep{border-top:1px solid #eee;margin-top:10px;padding-top:8px}
+        .kv{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
+        .list{background:#fff;border-radius:12px;overflow:hidden}
+        .row,.arow{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #f0f0f0;cursor:pointer}
+        .row:last-child,.arow:last-child{border-bottom:none}
+        .rowTitle{font-size:14px;font-weight:bold}
+        .rowSub{font-size:11px;color:#888;margin-top:3px}
+        .circle{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold}
+        .pcard{background:#fff;border-radius:8px;padding:11px 12px;margin-bottom:8px}
+        .cat{background:#e3e8ee;border-radius:8px;padding:9px 12px;margin:14px 0 8px}
+        .catName{font-size:13px;font-weight:bold}
+        .catStats{font-size:11px;color:#666;margin-top:3px}
+        .term{background:#2c3e50;color:#fff;padding:8px 10px;border-radius:6px;margin:14px 0 8px;font-size:12px}
+        .legend,.legend2{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:#777;margin-bottom:10px}
+        .legend i,.legend2 i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:4px}
+        .filters{display:flex;gap:6px;margin-bottom:10px}
+        .chip{background:#e6e6e6;border-radius:14px;padding:6px 14px;font-size:12px;cursor:pointer}
+        .chip.active{background:#3498db;color:#fff}
+        .empty{text-align:center;color:#aaa;padding:40px 10px}
+        .gold{background:#caa23e;color:#fff;font-size:11px;padding:3px 10px;border-radius:12px}
+        .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
+        .ov.show{display:flex}
+        .modal{background:#fff;border-radius:14px;padding:16px;width:86%;max-width:340px}
+        </style></head><body>
+        <div class="tabs">
+        <div class="tab active" onclick="sp(this,'home')">الرئيسية</div>
+        <div class="tab" onclick="sp(this,'plan')">الخطة</div>
+        <div class="tab" onclick="sp(this,'grades')">الدرجات</div>
+        <div class="tab" onclick="sp(this,'account')">الحساب</div>
+        <div onclick="if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh()" style="padding:12px 12px;color:#fff;background:#1a252f;cursor:pointer">&#8635;</div>
+        </div>
+    """.trimIndent()
+
+    private val SCRIPT = """
+        <div class='ov' id='ov' onclick="if(event.target===this)cm()">
+        <div class='modal'>
+        <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
+        <div id='mn' style='font-size:15px;font-weight:bold;margin-bottom:10px'></div>
+        <div class='kv'><span>الشعبة</span><span id='ms'></span></div>
+        <div class='kv'><span>المدرس</span><span id='mi'></span></div>
+        <div class='kv'><span>علامة المنتصف</span><span id='mmg'></span></div>
+        <div class='kv'><span>أعمال أخرى</span><span id='mwg'></span></div>
+        <div class='kv'><span>العلامة النهائية</span><span id='mfg'></span></div>
+        <div class='kv'><span>المجموع</span><span id='mtg'></span></div>
+        <div class='kv'><span>امتحان المنتصف</span><span id='mme'></span></div>
+        <div class='kv'><span>الامتحان النهائي</span><span id='mfe'></span></div>
+        </div></div>
+        <script>
+        function sp(el,id){
+          document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
+          document.getElementById(id).classList.add('active');
+          document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
+          el.classList.add('active');
+        }
+        function v(x){return (x&&x!=='-'&&x!=='')?x:'-';}
+        function openModal(k){
+          var c=(typeof C!=='undefined')?C[k]:null; if(!c)return;
+          document.getElementById('mn').textContent=c.n;
+          document.getElementById('ms').textContent=v(c.s);
+          document.getElementById('mi').textContent=v(c.i);
+          document.getElementById('mmg').textContent=v(c.mg);
+          document.getElementById('mwg').textContent=v(c.wg);
+          document.getElementById('mfg').textContent=v(c.fg);
+          document.getElementById('mtg').textContent=v(c.tg)!=='-'?c.tg:(v(c.gc)!=='-'?c.gc:'لم تصدر');
+          document.getElementById('mme').textContent=c.md?(c.md+' — '+c.mt+(c.mr?' — '+c.mr:'')):'-';
+          document.getElementById('mfe').textContent=c.fd?(c.fd+' — '+c.ft+(c.fr?' — '+c.fr:'')):'-';
+          document.getElementById('ov').classList.add('show');
+        }
+        function cm(){document.getElementById('ov').classList.remove('show')}
+        function fg(el,m){
+          el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
+          el.classList.add('active');
+          document.querySelectorAll('#grades .term').forEach(function(t){t.style.display=(m==='sem')?'block':'none'});
+        }
+        function fa(el,m){
+          el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
+          el.classList.add('active');
+          var cut=new Date();cut.setMonth(cut.getMonth()-3);
+          document.querySelectorAll('.arow').forEach(function(r){
+            if(m==='all'){r.style.display='flex';return}
+            var p=(r.getAttribute('data-d')||'').split('-');
+            var d=p.length===3?new Date(p[2],p[1]-1,p[0]):null;
+            r.style.display=(d&&d>=cut)?'flex':'none';
+          });
+        }
+        (function(){
+          var c=document.querySelector('#account .chip');
+          if(c)fa(c,'recent');
+        })();
+        </script></body></html>
+    """.trimIndent()
 }
