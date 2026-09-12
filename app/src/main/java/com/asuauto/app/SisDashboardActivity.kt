@@ -91,6 +91,33 @@ class SisDashboardActivity : AppCompatActivity() {
         }
     """.trimIndent()
 
+    private val CACHE_PREFS = "asu_dashboard_cache"
+
+    private fun startScraping() {
+        phase = "login"
+        sessionId = ""
+        categoryIndex = 0
+        categoryCount = 0
+        rawTables.clear()
+        planDetails.clear()
+        categoryNames = mutableListOf()
+
+        progressLayout.visibility = View.VISIBLE
+        resultWebView.visibility = View.GONE
+        webView.visibility = View.VISIBLE
+        setStatus("جاري تسجيل الدخول...")
+
+        webView.loadUrl("https://sis.asu.edu.bh/ords/f?p=101:1")
+
+        // Safety net: never hang forever — show whatever we have after 60s
+        webView.postDelayed({
+            if (phase != "done") {
+                phase = "done"
+                buildAndShowDashboard()
+            }
+        }, 60000)
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -103,7 +130,10 @@ class SisDashboardActivity : AppCompatActivity() {
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        webView.addJavascriptInterface(Bridge(), "AndroidBridge")
+        resultWebView.settings.javaScriptEnabled = true
+        val bridge = Bridge()
+        webView.addJavascriptInterface(bridge, "AndroidBridge")
+        resultWebView.addJavascriptInterface(bridge, "AndroidBridge")
 
         val prefs = getSharedPreferences("asu_prefs", MODE_PRIVATE)
         val user = prefs.getString("username", "") ?: ""
@@ -232,15 +262,15 @@ class SisDashboardActivity : AppCompatActivity() {
             }
         }
 
-        webView.loadUrl("https://sis.asu.edu.bh/ords/f?p=101:1")
-
-        // Safety net: never hang forever — show whatever we have after 60s
-        webView.postDelayed({
-            if (phase != "done") {
-                phase = "done"
-                buildAndShowDashboard()
-            }
-        }, 60000)
+        val cachedHtml = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).getString("html", null)
+        if (cachedHtml != null) {
+            progressLayout.visibility = View.GONE
+            webView.visibility = View.GONE
+            resultWebView.visibility = View.VISIBLE
+            resultWebView.loadDataWithBaseURL(null, cachedHtml, "text/html", "utf-8", null)
+        } else {
+            startScraping()
+        }
     }
 
     private fun setStatus(text: String) {
@@ -259,6 +289,11 @@ class SisDashboardActivity : AppCompatActivity() {
                 DataStore.accountBalance = value
                 runOnUiThread { buildAndShowDashboard() }
             }
+        }
+
+        @JavascriptInterface
+        fun refresh() {
+            runOnUiThread { startScraping() }
         }
 
         @JavascriptInterface
@@ -346,6 +381,7 @@ class SisDashboardActivity : AppCompatActivity() {
         DataStore.account = rawTables["account"]?.let { pickLargestTable(it) } ?: mutableListOf()
 
         val html = DashboardHtmlBuilder.build()
+        getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).apply()
         resultWebView.settings.javaScriptEnabled = true
         resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
         progressLayout.visibility = View.GONE
