@@ -20,37 +20,36 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private var phase = "login"
     private var sessionId = ""
-    private var categoryIndex = 0
-    private var categoryCount = 0
+    private var planLinks: MutableList<String> = mutableListOf()
+    private var planNames: MutableList<String> = mutableListOf()
+    private var planIndex = 0
 
     private val rawTables = HashMap<String, JSONArray>()
-    private val planDetails = LinkedHashMap<Int, List<List<String>>>()
-    private var categoryNames: MutableList<String> = mutableListOf()
+    private val CACHE_PREFS = "asu_dashboard_cache"
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
     private val JS_LIB = """
-        function nthWithText(txt, n) {
-            var all = document.querySelectorAll('a,button,span,li,div,td');
-            var matches = [];
-            for (var i=0;i<all.length;i++){
-                var t = (all[i].textContent||'').trim();
-                if (t === txt) matches.push(all[i]);
+        function getField(label) {
+            var dts = document.querySelectorAll('dt');
+            for (var i=0;i<dts.length;i++){
+                if ((dts[i].textContent||'').trim() === label) {
+                    var dd = dts[i].nextElementSibling;
+                    if (dd && dd.tagName === 'DD') return dd.textContent.trim();
+                }
             }
-            return matches[n] || null;
+            return '';
         }
-        function countWithText(txt) {
-            var all = document.querySelectorAll('a,button,span,li,div,td');
-            var c = 0;
-            for (var i=0;i<all.length;i++){
-                if ((all[i].textContent||'').trim() === txt) c++;
-            }
-            return c;
+        function getById(id) {
+            var el = document.getElementById(id);
+            return el ? el.textContent.trim() : '';
         }
-        function clickNth(txt, n) {
-            var el = nthWithText(txt, n);
-            if (el) { el.click(); return true; }
-            return false;
+        function getGradExpected() {
+            var lbl = document.getElementById('P1_EXCPECTED_GRAD_LABEL');
+            if (!lbl) return '';
+            var t = lbl.textContent.replace(/\s+/g,' ').trim();
+            var idx = t.indexOf('؟');
+            return idx >= 0 ? t.substring(idx+1).trim() : t;
         }
         function clickTabByLabel(label) {
             var panel = document.querySelector('[data-label="' + label + '"]');
@@ -59,63 +58,108 @@ class SisDashboardActivity : AppCompatActivity() {
             if (tabBtn) { tabBtn.click(); return true; }
             return false;
         }
-        function scrapeAllTables() {
-            var tables = document.querySelectorAll('table');
-            var result = [];
-            for (var ti=0; ti<tables.length; ti++) {
-                var t = tables[ti];
-                var rows = [];
-                var trs = t.querySelectorAll('tr');
-                for (var ri=0; ri<trs.length; ri++) {
-                    var cells = trs[ri].querySelectorAll('th,td');
-                    var rowArr = [];
-                    for (var ci=0; ci<cells.length; ci++) {
-                        rowArr.push(cells[ci].innerText.trim());
-                    }
-                    if (rowArr.length > 0) rows.push(rowArr);
-                }
-                if (rows.length > 0) result.push(rows);
+        function scrapeTableById(id) {
+            var t = document.getElementById(id);
+            if (!t) return '[]';
+            var rows = [];
+            var trs = t.querySelectorAll('tr');
+            for (var ri=0; ri<trs.length; ri++) {
+                var cells = trs[ri].querySelectorAll('th,td');
+                var rowArr = [];
+                for (var ci=0; ci<cells.length; ci++) rowArr.push(cells[ci].innerText.trim());
+                if (rowArr.length > 0) rows.push(rowArr);
             }
-            return JSON.stringify(result);
+            return JSON.stringify(rows);
         }
-        function textAfterLabel(label) {
-            var all = document.querySelectorAll('body *');
-            for (var i=0;i<all.length;i++){
-                var t = (all[i].textContent||'').trim();
-                if (t === label) {
-                    var sib = all[i].previousElementSibling;
-                    if (sib) return sib.textContent.trim();
+        function scrapeTableByLabel(labelText) {
+            var tables = document.querySelectorAll('table.t-Report-report');
+            for (var i=0;i<tables.length;i++){
+                if ((tables[i].getAttribute('aria-label')||'').trim() === labelText) {
+                    var rows = [];
+                    var trs = tables[i].querySelectorAll('tr');
+                    for (var ri=0; ri<trs.length; ri++) {
+                        var cells = trs[ri].querySelectorAll('th,td');
+                        var rowArr = [];
+                        for (var ci=0; ci<cells.length; ci++) rowArr.push(cells[ci].innerText.trim());
+                        if (rowArr.length > 0) rows.push(rowArr);
+                    }
+                    return JSON.stringify(rows);
                 }
             }
-            return '';
+            return '[]';
+        }
+        function collectPlanLinks() {
+            var out = [];
+            var rows = document.querySelectorAll('#report_table_R3711472670484039573 tbody tr');
+            for (var i=0;i<rows.length;i++){
+                var a = rows[i].querySelector('a');
+                var cells = rows[i].querySelectorAll('td');
+                if (a && cells.length > 0) {
+                    out.push({
+                        href: a.getAttribute('href'),
+                        name: cells[0].innerText.trim(),
+                        group: cells.length > 1 ? cells[1].innerText.trim() : '',
+                        required: cells.length > 2 ? cells[2].innerText.trim() : '',
+                        studied: cells.length > 3 ? cells[3].innerText.trim() : '',
+                        passed: cells.length > 4 ? cells[4].innerText.trim() : ''
+                    });
+                }
+            }
+            return JSON.stringify(out);
+        }
+        function scrapePlanDetail() {
+            var tbl = document.querySelector('#R3711474874649116488 table.t-Report-report');
+            if (!tbl) return '[]';
+            var rows = [];
+            var trs = tbl.querySelectorAll('tr');
+            for (var ri=0; ri<trs.length; ri++) {
+                var cells = trs[ri].querySelectorAll('th,td');
+                var rowArr = [];
+                for (var ci=0; ci<cells.length; ci++) rowArr.push(cells[ci].innerText.trim());
+                if (rowArr.length > 0) rows.push(rowArr);
+            }
+            return JSON.stringify(rows);
+        }
+        function scrapeTranscript() {
+            var tbl = document.getElementById('report_table_R3755411640631850167');
+            if (!tbl) return '[]';
+            var rows = [];
+            var trs = tbl.querySelectorAll('tr');
+            for (var ri=0; ri<trs.length; ri++) {
+                var tr = trs[ri];
+                var brk = tr.querySelector('td.apex_report_break');
+                if (brk) { rows.push(['__TERM__', brk.innerText.replace(/\s+/g,' ').trim()]); continue; }
+                if (tr.querySelector('th')) continue;
+                var cells = tr.querySelectorAll('td');
+                var rowArr = [];
+                for (var ci=0; ci<cells.length; ci++) rowArr.push(cells[ci].innerText.trim());
+                if (rowArr.length > 0) rows.push(rowArr);
+            }
+            return JSON.stringify(rows);
         }
     """.trimIndent()
-
-    private val CACHE_PREFS = "asu_dashboard_cache"
 
     private fun startScraping() {
         phase = "login"
         sessionId = ""
-        categoryIndex = 0
-        categoryCount = 0
+        planIndex = 0
+        planLinks.clear()
+        planNames.clear()
         rawTables.clear()
-        planDetails.clear()
-        categoryNames = mutableListOf()
+        DataStore.reset()
 
         progressLayout.visibility = View.VISIBLE
         resultWebView.visibility = View.GONE
-        webView.visibility = View.VISIBLE
         setStatus("جاري تسجيل الدخول...")
 
         webView.loadUrl("https://sis.asu.edu.bh/ords/f?p=101:1")
 
-        // Safety net: never hang forever — show whatever we have after 60s
         webView.postDelayed({
             if (phase != "done") {
                 phase = "done"
                 buildAndShowDashboard()
             }
-        }, 60000)
+        }, 45000)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -151,26 +195,17 @@ class SisDashboardActivity : AppCompatActivity() {
 
                 when (phase) {
                     "login" -> {
-                        setStatus("جاري تسجيل الدخول...")
                         val js = """
                             (function(){
-                                var userField = document.querySelector('input[type="text"]');
-                                var passField = document.querySelector('input[type="password"]');
-                                if (userField && passField) {
-                                    userField.value = "$user";
-                                    passField.value = "$pass";
-                                    userField.dispatchEvent(new Event('input', {bubbles:true}));
-                                    passField.dispatchEvent(new Event('input', {bubbles:true}));
-                                    var btn = document.querySelector('button[type="submit"]') || document.querySelector('input[type="submit"]');
-                                    if (!btn) {
-                                        var buttons = document.querySelectorAll('button');
-                                        for (var i=0;i<buttons.length;i++){
-                                            var t = buttons[i].textContent.trim().toLowerCase();
-                                            if (t.indexOf('login') !== -1 || t.indexOf('دخول') !== -1) { btn = buttons[i]; break; }
-                                        }
-                                        if (!btn && buttons.length === 1) btn = buttons[0];
-                                    }
-                                    if (btn) setTimeout(function(){ btn.click(); }, 500);
+                                var u = document.querySelector('input[type="text"]');
+                                var p = document.querySelector('input[type="password"]');
+                                if (u && p) {
+                                    u.value = "$user"; p.value = "$pass";
+                                    u.dispatchEvent(new Event('input',{bubbles:true}));
+                                    p.dispatchEvent(new Event('input',{bubbles:true}));
+                                    var b = document.querySelector('button[type="submit"]') || document.querySelector('input[type="submit"]');
+                                    if (!b) { var bs = document.querySelectorAll('button'); if (bs.length===1) b = bs[0]; }
+                                    if (b) setTimeout(function(){ b.click(); }, 400);
                                 }
                             })();
                         """.trimIndent()
@@ -179,97 +214,96 @@ class SisDashboardActivity : AppCompatActivity() {
                     }
                     "afterLogin" -> {
                         if (sessionId.isEmpty()) return
+                        setStatus("جاري جلب معلومات الطالب...")
+                        view.loadUrl(pageUrl(1))
+                        phase = "page1"
+                    }
+                    "page1" -> {
+                        view.evaluateJavascript("AndroidBridge.txt('studentName', getField('Name'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('studentCollege', getField('The College'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('studentGpa', getField('المعدل التراكمي'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('studentWarning', getField('حالة الانذار الاكاديمي'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('advisor', getField('المرشد الاكاديمي'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('gradExpected', getGradExpected());", null)
+                        view.evaluateJavascript("AndroidBridge.tbl('registration', scrapeTableById('report_table_currRegId'));", null)
+                        view.evaluateJavascript("AndroidBridge.tbl('semesterGrades', scrapeTableById('report_table_termmarks'));", null)
+                        view.evaluateJavascript("AndroidBridge.tbl('attendance', scrapeTableByLabel('احصائيات الحضور والغياب'));", null)
                         setStatus("جاري جلب مواعيد التسجيل...")
-                        view.loadUrl(pageUrl(6))
-                        phase = "regTimes"
+                        view.postDelayed({ view.loadUrl(pageUrl(6)) }, 200)
+                        phase = "page6"
                     }
-                    "regTimes" -> {
-                        view.evaluateJavascript("AndroidBridge.onScraped('regTimes', scrapeAllTables());", null)
-                        setStatus("جاري جلب المواد المسجلة...")
-                        view.postDelayed({ view.loadUrl(pageUrl(1)) }, 300)
-                        phase = "registrationBase"
-                    }
-                    "registrationBase" -> {
-                        view.evaluateJavascript("AndroidBridge.onScraped('studentBasic', scrapeAllTables());", null)
-                        view.postDelayed({
-                            view.evaluateJavascript("if(!clickTabByLabel('المواد المسجلة للفصل الحالي')) clickNth('المواد المسجلة للفصل الحالي',0);", null)
-                            view.postDelayed({
-                                view.evaluateJavascript("AndroidBridge.onScraped('registration', scrapeAllTables());", null)
-                                view.evaluateJavascript("if(!clickTabByLabel('علامات الفصل')) clickNth('علامات الفصل',0);", null)
-                                view.postDelayed({
-                                    view.evaluateJavascript("AndroidBridge.onScraped('semesterGrades', scrapeAllTables());", null)
-                                    view.evaluateJavascript("if(!clickTabByLabel('احصائيات الحضور والغياب')) clickNth('احصائيات الحضور والغياب',0);", null)
-                                    view.postDelayed({
-                                        view.evaluateJavascript("AndroidBridge.onScraped('attendance', scrapeAllTables());", null)
-                                        setStatus("جاري جلب الخطة الدراسية...")
-                                        view.loadUrl(pageUrl(3))
-                                    }, 1500)
-                                }, 1500)
-                            }, 1500)
-                        }, 300)
+                    "page6" -> {
+                        view.evaluateJavascript("AndroidBridge.txt('regStart', getField('بداية تاريخ التسجيل'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('regEnd', getField('نهاية تاريخ التسجيل'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('addDropStart', getField('بداية تاريخ السحب و الأضافه'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('addDropEnd', getField('نهاية تاريخ السحب ولأضافه'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('academicStatus', getField('الوضع الأكاديمي'));", null)
+                        setStatus("جاري جلب الخطة الدراسية...")
+                        view.postDelayed({ view.loadUrl(pageUrl(3)) }, 200)
                         phase = "planSummary"
                     }
                     "planSummary" -> {
-                        view.evaluateJavascript(
-                            "AndroidBridge.onScraped('planSummaryTable', scrapeAllTables()); AndroidBridge.onCount('planCategories', countWithText('تفاصيل')); clickNth('تفاصيل', 0);",
-                            null
-                        )
-                        phase = "planDetail"
+                        view.evaluateJavascript("AndroidBridge.planLinks(collectPlanLinks());", null)
+                        phase = "planWait"
+                        view.postDelayed({ nextPlanDetail(view) }, 400)
                     }
                     "planDetail" -> {
-                        setStatus("جاري جلب الخطة الدراسية (${categoryIndex + 1}/$categoryCount)...")
-                        view.evaluateJavascript(
-                            "AndroidBridge.onScraped('planDetail_$categoryIndex', scrapeAllTables());", null
-                        )
-                        categoryIndex++
-                        if (categoryIndex < categoryCount) {
-                            view.postDelayed({
-                                view.loadUrl(pageUrl(3))
-                            }, 300)
-                            phase = "planSummaryReturn"
-                        } else {
-                            setStatus("جاري جلب كشف الدرجات...")
-                            view.postDelayed({ view.loadUrl(pageUrl(8)) }, 300)
-                            phase = "grades"
-                        }
-                    }
-                    "planSummaryReturn" -> {
-                        view.postDelayed({
-                            view.evaluateJavascript("clickNth('تفاصيل', $categoryIndex);", null)
-                        }, 300)
-                        phase = "planDetail"
+                        view.evaluateJavascript("AndroidBridge.tbl('planDetail_$planIndex', scrapePlanDetail());", null)
+                        planIndex++
+                        view.postDelayed({ nextPlanDetail(view) }, 250)
+                        phase = "planWait"
                     }
                     "grades" -> {
-                        view.evaluateJavascript("AndroidBridge.onScraped('grades', scrapeAllTables());", null)
+                        view.evaluateJavascript("AndroidBridge.txt('gpa', getField('المعدل التراكمي'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('totalHours', getField('مجموع الساعات التراكمية'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('passedHours', getField('الساعات التى نجح بها'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('honorList', getField('على لائحة الشرف'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('planHours', getField('ساعات الخطه الدراسية'));", null)
+                        view.evaluateJavascript("AndroidBridge.tbl('transcript', scrapeTranscript());", null)
                         setStatus("جاري جلب الأقساط...")
-                        view.postDelayed({ view.loadUrl(pageUrl(18)) }, 300)
+                        view.postDelayed({ view.loadUrl(pageUrl(18)) }, 200)
                         phase = "payment"
                     }
                     "payment" -> {
-                        view.evaluateJavascript("AndroidBridge.onScraped('payment', scrapeAllTables());", null)
-                        setStatus("جاري جلب كشف حساب الطالب...")
-                        view.postDelayed({ view.loadUrl(pageUrl(7)) }, 300)
+                        view.evaluateJavascript("AndroidBridge.txt('inst1', getField('قيمة القسط الاول'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('inst1Paid', getField('تم دفع القسط الاول؟'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('inst2', getField('قيمة القسط الثاني'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('inst2Paid', getField('تم دفع القسط الثاني؟'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('inst3', getField('قيمة القسط الثالث'));", null)
+                        view.evaluateJavascript("AndroidBridge.txt('inst3Paid', getField('تم دفع القسط الثالث؟'));", null)
+                        setStatus("جاري جلب كشف الحساب...")
+                        view.postDelayed({ view.loadUrl(pageUrl(7)) }, 200)
                         phase = "account"
                     }
                     "account" -> {
-                        view.evaluateJavascript("AndroidBridge.onScraped('account', scrapeAllTables());", null)
-                        view.evaluateJavascript(
-                            "AndroidBridge.onText('accountBalance', textAfterLabel('الرصيد المطلوب'));", null
-                        )
+                        view.evaluateJavascript("AndroidBridge.txt('balance', getById('P7_BALANCE'));", null)
+                        view.evaluateJavascript("AndroidBridge.tbl('account', scrapeTableByLabel('تفاصيل كشف الحساب '));", null)
                         phase = "done"
+                        view.postDelayed({ buildAndShowDashboard() }, 400)
                     }
                 }
             }
         }
 
-        val cachedHtml = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).getString("html", null)
-        if (cachedHtml != null) {
+        val cached = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).getString("html", null)
+        if (cached != null) {
             progressLayout.visibility = View.GONE
-            webView.visibility = View.GONE
             resultWebView.visibility = View.VISIBLE
-            resultWebView.loadDataWithBaseURL(null, cachedHtml, "text/html", "utf-8", null)
+            resultWebView.loadDataWithBaseURL(null, cached, "text/html", "utf-8", null)
         } else {
             startScraping()
+        }
+    }
+
+    private fun nextPlanDetail(view: WebView) {
+        if (planIndex < planLinks.size) {
+            setStatus("جاري جلب الخطة (${planIndex + 1}/${planLinks.size})...")
+            phase = "planDetail"
+            view.loadUrl("https://sis.asu.edu.bh/ords/" + planLinks[planIndex])
+        } else {
+            setStatus("جاري جلب كشف الدرجات...")
+            phase = "grades"
+            view.loadUrl(pageUrl(8))
         }
     }
 
@@ -279,140 +313,99 @@ class SisDashboardActivity : AppCompatActivity() {
 
     inner class Bridge {
         @JavascriptInterface
-        fun onCount(tag: String, count: Int) {
-            if (tag == "planCategories") categoryCount = count
+        fun txt(tag: String, value: String) {
+            val v = value.trim().removeSurrounding("\"")
+            DataStore.fields[tag] = if (v == "null") "" else v
         }
 
         @JavascriptInterface
-        fun onText(tag: String, value: String) {
-            if (tag == "accountBalance") {
-                DataStore.accountBalance = value
-                runOnUiThread { buildAndShowDashboard() }
+        fun tbl(tag: String, json: String) {
+            try {
+                rawTables[tag] = JSONArray(json.trim().removeSurrounding("\""))
+            } catch (e: Exception) {
+                try { rawTables[tag] = JSONArray(json) } catch (e2: Exception) {}
             }
+        }
+
+        @JavascriptInterface
+        fun planLinks(json: String) {
+            try {
+                val arr = JSONArray(json.trim().removeSurrounding("\""))
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    planLinks.add(o.optString("href"))
+                    planNames.add(o.optString("name"))
+                    DataStore.planStats.add(
+                        listOf(
+                            o.optString("name"),
+                            o.optString("required"),
+                            o.optString("studied"),
+                            o.optString("passed")
+                        )
+                    )
+                }
+            } catch (e: Exception) {}
         }
 
         @JavascriptInterface
         fun refresh() {
             runOnUiThread { startScraping() }
         }
-
-        @JavascriptInterface
-        fun onScraped(tag: String, json: String) {
-            try {
-                val tables = JSONArray(json)
-                rawTables[tag] = tables
-                if (tag.startsWith("planDetail_")) {
-                    val idx = tag.removePrefix("planDetail_").toInt()
-                    planDetails[idx] = pickTableWithHeaderContaining(tables, "المتطلب السابق")
-                }
-                if (tag == "planSummaryTable") {
-                    val summary = pickTableWithHeaderContaining(tables, "عنصر الخطة")
-                    val names = mutableListOf<String>()
-                    for (r in 1 until summary.size) {
-                        val row = summary[r]
-                        if (row.isNotEmpty()) names.add(row.last())
-                    }
-                    categoryNames = names
-                }
-            } catch (e: Exception) {
-                // ignore malformed scrape, continue flow
-            }
-        }
     }
 
-    private fun pickLargestTable(tables: JSONArray): MutableList<List<String>> {
-        var best: MutableList<List<String>> = mutableListOf()
-        for (i in 0 until tables.length()) {
-            val t = tables.getJSONArray(i)
-            if (t.length() > best.size) best = jsonTableToList(t)
-        }
-        return best
-    }
-
-    private fun pickTableWithHeaderContaining(tables: JSONArray, needle: String): List<List<String>> {
-        for (i in 0 until tables.length()) {
-            val t = tables.getJSONArray(i)
-            if (t.length() == 0) continue
-            val header = t.getJSONArray(0)
-            for (c in 0 until header.length()) {
-                if (header.getString(c).contains(needle)) return jsonTableToList(t)
-            }
-        }
-        return emptyList()
-    }
-
-    private fun jsonTableToList(t: JSONArray): MutableList<List<String>> {
+    private fun toList(t: JSONArray?): List<List<String>> {
+        if (t == null) return emptyList()
         val rows = mutableListOf<List<String>>()
         for (r in 0 until t.length()) {
-            val row = t.getJSONArray(r)
+            val row = t.optJSONArray(r) ?: continue
             val cells = mutableListOf<String>()
-            for (c in 0 until row.length()) cells.add(row.getString(c))
+            for (c in 0 until row.length()) cells.add(row.optString(c))
             rows.add(cells)
         }
         return rows
     }
 
-    private fun pickTableContainingCell(tables: JSONArray, cellText: String): List<List<String>> {
-        for (i in 0 until tables.length()) {
-            val t = tables.getJSONArray(i)
-            for (r in 0 until t.length()) {
-                val row = t.getJSONArray(r)
-                for (c in 0 until row.length()) {
-                    if (row.getString(c).trim() == cellText) return jsonTableToList(t)
-                }
-            }
-        }
-        return emptyList()
-    }
-
     private fun buildAndShowDashboard() {
-        DataStore.studentBasic = rawTables["studentBasic"]?.let { pickTableContainingCell(it, "Name") } ?: emptyList()
-        DataStore.regTimes = rawTables["regTimes"]?.let { pickTableContainingCell(it, "متوقع تخرجه") } ?: emptyList()
-        DataStore.registration = rawTables["registration"]?.let { pickTableWithHeaderContaining(it, "قاعة الامتحان النهائي") } ?: emptyList()
-        DataStore.semesterGrades = rawTables["semesterGrades"]?.let { pickTableWithHeaderContaining(it, "حالة العلامة") } ?: emptyList()
-        DataStore.attendance = rawTables["attendance"]?.let { pickTableWithHeaderContaining(it, "الغياب") } ?: emptyList()
-        DataStore.planDetails = planDetails
-        DataStore.categoryNames = categoryNames
-        DataStore.grades = rawTables["grades"]?.let { pickLargestTable(it) } ?: mutableListOf()
-        DataStore.gradesSummary = rawTables["grades"]?.let {
-            pickTableWithHeaderContaining(it, "المعدل التراكمي")
-        } ?: emptyList()
-        DataStore.payment = rawTables["payment"]?.let { pickLargestTable(it) } ?: mutableListOf()
-        DataStore.account = rawTables["account"]?.let { pickLargestTable(it) } ?: mutableListOf()
-
-        val debugLines = StringBuilder()
-        debugLines.append("phase=$phase | sessionId=[$sessionId]<br>")
-        for (key in listOf("regTimes", "studentBasic", "registration", "semesterGrades", "attendance", "planSummaryTable", "grades", "payment", "account")) {
-            val t = rawTables[key]
-            val tableCount = t?.length() ?: -1
-            val rowCounts = if (t != null) (0 until t.length()).joinToString(",") { t.getJSONArray(it).length().toString() } else "-"
-            debugLines.append("$key: جداول=$tableCount صفوف=[$rowCounts]<br>")
-        }
-        debugLines.append("planDetail عدد الفئات المجلوبة=${planDetails.size} / متوقع=$categoryCount<br>")
-        DataStore.debugInfo = debugLines.toString()
+        DataStore.registration = toList(rawTables["registration"])
+        DataStore.semesterGrades = toList(rawTables["semesterGrades"])
+        DataStore.attendance = toList(rawTables["attendance"])
+        DataStore.transcript = toList(rawTables["transcript"])
+        DataStore.account = toList(rawTables["account"])
+        DataStore.planNames = planNames.toList()
+        val details = LinkedHashMap<Int, List<List<String>>>()
+        for (i in planLinks.indices) details[i] = toList(rawTables["planDetail_$i"])
+        DataStore.planDetails = details
 
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).apply()
-        resultWebView.settings.javaScriptEnabled = true
         resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
         progressLayout.visibility = View.GONE
-        webView.visibility = View.GONE
         resultWebView.visibility = View.VISIBLE
     }
 }
 
 object DataStore {
-    var studentBasic: List<List<String>> = emptyList()
-    var regTimes: List<List<String>> = emptyList()
+    val fields = HashMap<String, String>()
     var registration: List<List<String>> = emptyList()
     var semesterGrades: List<List<String>> = emptyList()
     var attendance: List<List<String>> = emptyList()
-    var planDetails: Map<Int, List<List<String>>> = emptyMap()
-    var categoryNames: List<String> = emptyList()
-    var grades: List<List<String>> = emptyList()
-    var gradesSummary: List<List<String>> = emptyList()
-    var payment: List<List<String>> = emptyList()
+    var transcript: List<List<String>> = emptyList()
     var account: List<List<String>> = emptyList()
-    var accountBalance: String = ""
-    var debugInfo: String = ""
+    var planDetails: Map<Int, List<List<String>>> = emptyMap()
+    var planNames: List<String> = emptyList()
+    val planStats = mutableListOf<List<String>>()
+
+    fun f(key: String) = fields[key]?.trim()?.takeIf { it != "-" && it.isNotEmpty() } ?: ""
+
+    fun reset() {
+        fields.clear()
+        planStats.clear()
+        registration = emptyList()
+        semesterGrades = emptyList()
+        attendance = emptyList()
+        transcript = emptyList()
+        account = emptyList()
+        planDetails = emptyMap()
+        planNames = emptyList()
+    }
 }
