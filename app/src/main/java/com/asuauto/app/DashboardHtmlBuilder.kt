@@ -465,7 +465,7 @@ object DashboardHtmlBuilder {
         <div class='kv'><span>المدرس</span><span id='mi'></span></div>
         <div class='kv'><span>علامة المنتصف</span><span id='mmg'></span></div>
         <div class='kv'><span>أعمال أخرى</span><span id='mwg'></span></div>
-        <div class='kv'><span>العلامة النهائية</span><span id='mfg'></span></div>
+        <div class='kv'><span>علامة الامتحان النهائي</span><span id='mfg'></span></div>
         <div class='kv'><span>المجموع</span><span id='mtg'></span></div>
         <div class='kv'><span>امتحان المنتصف</span><span id='mme'></span></div>
         <div class='kv'><span>الامتحان النهائي</span><span id='mfe'></span></div>
