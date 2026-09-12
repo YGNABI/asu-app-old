@@ -55,7 +55,9 @@ object DashboardHtmlBuilder {
         var nameEn = ""
         var section = ""
         var days = ""
+        var rawDays = ""
         var from = ""
+        var rawFrom = ""
         var to = ""
         var room = ""
         var instructor = ""
@@ -95,6 +97,7 @@ object DashboardHtmlBuilder {
                 val x = Course()
                 x.code = code
                 x.nameEn = c(ni); x.section = c(si)
+                x.rawDays = c(di); x.rawFrom = c(fi)
                 x.days = daysAr(c(di)); x.from = to12h(c(fi)); x.to = to12h(c(ti))
                 x.room = c(ri); x.instructor = c(li)
                 x.midDate = c(mdi); x.midTime = to12h(c(mti)); x.midRoom = c(mri)
@@ -183,8 +186,19 @@ object DashboardHtmlBuilder {
             sb.append("<div class='empty'>ما فيه مواد مسجلة</div>")
             return sb.toString()
         }
+        val dayOrder = mapOf('U' to 0, 'M' to 1, 'T' to 2, 'W' to 3, 'H' to 4, 'F' to 5, 'S' to 6)
+        fun timeMinutes(t: String): Int {
+            val p = t.trim().split(":")
+            val h = p.getOrNull(0)?.toIntOrNull() ?: 0
+            val m = p.getOrNull(1)?.toIntOrNull() ?: 0
+            return h * 60 + m
+        }
+        val sorted = cs.entries.sortedWith(compareBy(
+            { dayOrder[it.value.rawDays.trim().firstOrNull()] ?: 9 },
+            { timeMinutes(it.value.rawFrom) }
+        ))
         sb.append("<div class='list'>")
-        for ((k, c) in cs) {
+        for ((k, c) in sorted) {
             val disp = c.nameAr.ifBlank { c.nameEn }
             val circle = if (c.att != null) {
                 val (b2, f2, black) = attColor(c.att!!)
@@ -192,7 +206,7 @@ object DashboardHtmlBuilder {
                 "$warn<div class='circle' style='background:$b2;color:$f2'>${c.att!!.toInt()}%</div>"
             } else "<div class='circle' style='background:#eee;color:#999'>-</div>"
             sb.append("<div class='row' onclick=\"openModal('$k')\">")
-            sb.append("<div><div class='rowTitle'>${esc(disp)}</div>")
+            sb.append("<div><div class='rowTitle'>${esc(disp)} <span class='codeTag'>${esc(c.code)}</span></div>")
             sb.append("<div class='rowSub'>${esc(c.days)} — ${esc(c.from)} - ${esc(c.to)} — ${esc(c.room)}</div></div>")
             sb.append("<div style='display:flex;align-items:center'>$circle</div></div>")
         }
@@ -212,12 +226,29 @@ object DashboardHtmlBuilder {
     private fun kvBox(label: String, value: String) =
         "<div><div class='lbl'>${esc(label)}</div><div class='val'>${esc(value.ifBlank { "-" })}</div></div>"
 
+    private fun hoursToCourses(hoursStr: String): Int {
+        val h = hoursStr.toDoubleOrNull() ?: return 0
+        return Math.round(h / 3.0).toInt()
+    }
+
     private fun plan(): String {
         val details = DataStore.planDetails
         if (details.isEmpty()) return "<div class='empty'>ما قدرنا نجيب الخطة الدراسية</div>"
         val current = courses().keys
         val sb = StringBuilder()
-        sb.append("<div class='legend'><span><i style='background:#27ae60'></i>مكتملة</span><span><i style='background:#3498db'></i>قيد الدراسة</span><span><i style='background:#e74c3c'></i>لم تُجتز</span></div>")
+
+        var remainingHours = 0.0
+        for (stat in DataStore.planStats) {
+            if (stat.getOrNull(0) == "خارج الخطة") continue
+            val req = stat.getOrNull(1)?.toDoubleOrNull() ?: 0.0
+            val passed = stat.getOrNull(3)?.toDoubleOrNull() ?: 0.0
+            remainingHours += (req - passed)
+        }
+        val remainingCourses = Math.round(remainingHours / 3.0).toInt()
+        sb.append("<div class='card' style='text-align:center'><div class='muted'>متبقي لإنهاء الخطة</div><div style='font-size:22px;font-weight:bold;margin-top:4px'>$remainingCourses مادة</div></div>")
+
+        sb.append("<div class='filters'><div class='chip active' onclick=\"fp(this,'reg')\">المسجلة فقط</div><div class='chip' onclick=\"fp(this,'all')\">الخطة كاملة</div></div>")
+        sb.append("<div class='legend'><span><i style='background:#27ae60'></i>مكتملة</span><span><i style='background:#3498db'></i>قيد الدراسة</span><span><i style='background:#e74c3c'></i>لم تُجتز</span><span><i style='background:#ccc'></i>لم تُدرس</span></div>")
 
         for (idx in details.keys.sorted()) {
             val rows = details[idx] ?: continue
@@ -228,26 +259,32 @@ object DashboardHtmlBuilder {
             val stat = DataStore.planStats.getOrNull(idx)
             val catName = stat?.getOrNull(0) ?: DataStore.planNames.getOrNull(idx) ?: "فئة ${idx + 1}"
 
-            val items = mutableListOf<String>()
+            val itemsReg = mutableListOf<String>()
+            val itemsAll = mutableListOf<String>()
             for (r in 1 until rows.size) {
                 val row = rows[r]
                 fun c(i: Int) = if (i in row.indices) row[i].trim() else ""
-                if (c(si) != "نعم") continue
+                val studied = c(si) == "نعم"
                 val passed = c(pi) == "نعم"
                 val code = c(ci)
                 val inProg = current.contains(norm(code))
-                val color = when { inProg -> "#3498db"; passed -> "#27ae60"; else -> "#e74c3c" }
-                val label = when { inProg -> "قيد الدراسة"; passed -> "مكتملة"; else -> "لم تُجتز" }
-                items.add("<div class='pcard' style='border-right:5px solid $color'><div class='rowTitle'>${esc(c(ni))}</div><div class='rowSub'>${esc(code)} — ${esc(c(hi))} ساعات — $label</div></div>")
+                val color = when { !studied -> "#ccc"; inProg -> "#3498db"; passed -> "#27ae60"; else -> "#e74c3c" }
+                val label = when { !studied -> "لم تُدرس"; inProg -> "قيد الدراسة"; passed -> "مكتملة"; else -> "لم تُجتز" }
+                val card = "<div class='pcard' style='border-right:5px solid $color'><div class='rowTitle'>${esc(c(ni))} <span class='codeTag'>${esc(code)}</span></div><div class='rowSub'>$label</div></div>"
+                itemsAll.add(card)
+                if (studied) itemsReg.add(card)
             }
-            if (items.isEmpty()) continue
+            if (itemsAll.isEmpty()) continue
+            val reqC = hoursToCourses(stat?.getOrNull(1) ?: "0")
+            val studC = hoursToCourses(stat?.getOrNull(2) ?: "0")
+            val passC = hoursToCourses(stat?.getOrNull(3) ?: "0")
+            val notPassedC = (studC - passC).coerceAtLeast(0)
             sb.append("<div class='cat'><div class='catName'>${esc(catName)}</div>")
-            if (stat != null && stat.size >= 4)
-                sb.append("<div class='catStats'>مطلوبة: ${esc(stat[1])} · درسها: ${esc(stat[2])} · مجتازة: ${esc(stat[3])}</div>")
-            sb.append("</div>")
-            items.forEach { sb.append(it) }
+            sb.append("<div class='catStats'>مطلوبة: $reqC · درسها: $studC · مجتازة: $passC · لم يجتزها: $notPassedC</div></div>")
+            sb.append("<div class='p-reg'>"); itemsReg.forEach { sb.append(it) }; sb.append("</div>")
+            sb.append("<div class='p-all' style='display:none'>"); itemsAll.forEach { sb.append(it) }; sb.append("</div>")
         }
-        if (sb.length < 200) return "<div class='empty'>ما فيه مواد مدروسة</div>"
+        if (sb.length < 300) return "<div class='empty'>ما فيه مواد مدروسة</div>"
         return sb.toString()
     }
 
@@ -282,6 +319,8 @@ object DashboardHtmlBuilder {
         sb.append("</div>")
         sb.append("<div class='filters'><div class='chip active' onclick=\"fg(this,'all')\">الكل</div><div class='chip' onclick=\"fg(this,'sem')\">حسب الفصل</div></div>")
 
+        val gMap = StringBuilder("<script>var G={")
+        var gi = 0
         for (row in rows) {
             if (row.size >= 2 && row[0] == "__TERM__") {
                 sb.append("<div class='term'>${esc(row[1])}</div>")
@@ -298,12 +337,17 @@ object DashboardHtmlBuilder {
                 case.contains("منسحب") -> "#999"
                 else -> "#E24B4A"
             }
-            sb.append("<div class='pcard' style='border-right:5px solid $color'>")
-            sb.append("<div class='rowTitle'>${esc(name)}</div>")
-            sb.append("<div class='rowSub'>${esc(code)}${if (num != null) " — ${esc(totalG)}" else ""}</div>")
-            sb.append("<div class='rowSub' style='margin-top:3px'>منتصف: ${esc(mid)} · أعمال: ${esc(work)} · نهائي: ${esc(fin)}</div>")
+            val key = "g${gi++}"
+            val circleTxt = if (num != null) totalG else if (case.isNotBlank() && case != "-") case.take(4) else "-"
+            sb.append("<div class='row' style='background:#fff;border-radius:8px;margin-bottom:8px;border-right:5px solid $color' onclick=\"openGrade('$key')\">")
+            sb.append("<div><div class='rowTitle'>${esc(name)} <span class='codeTag'>${esc(code)}</span></div>")
+            sb.append("<div class='rowSub'>منتصف: ${esc(mid)} · أعمال: ${esc(work)} · نهائي: ${esc(fin)}</div></div>")
+            sb.append("<div class='circle' style='background:$color;color:#fff;flex-shrink:0'>${esc(circleTxt)}</div>")
             sb.append("</div>")
+            gMap.append("\"$key\":{n:\"${esc(name)}\",c:\"${esc(code)}\",mg:\"${esc(mid)}\",wg:\"${esc(work)}\",fg:\"${esc(fin)}\",tg:\"${esc(totalG)}\",gc:\"${esc(case)}\"},")
         }
+        gMap.append("};</script>")
+        sb.append(gMap)
         return sb.toString()
     }
 
@@ -377,6 +421,7 @@ object DashboardHtmlBuilder {
         .row,.arow{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #f0f0f0;cursor:pointer}
         .row:last-child,.arow:last-child{border-bottom:none}
         .rowTitle{font-size:14px;font-weight:bold}
+        .codeTag{font-size:10px;color:#aaa;font-weight:normal}
         .rowSub{font-size:11px;color:#888;margin-top:3px}
         .circle{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold}
         .pcard{background:#fff;border-radius:8px;padding:11px 12px;margin-bottom:8px}
@@ -400,7 +445,8 @@ object DashboardHtmlBuilder {
         <div class="tab" onclick="sp(this,'plan')">الخطة</div>
         <div class="tab" onclick="sp(this,'grades')">الدرجات</div>
         <div class="tab" onclick="sp(this,'account')">الحساب</div>
-        <div onclick="if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh()" style="padding:12px 12px;color:#fff;background:#1a252f;cursor:pointer">&#8635;</div>
+        <div onclick="if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh()" style="padding:12px 10px;color:#fff;background:#1a252f;cursor:pointer">&#8635;</div>
+        <div onclick="doLogout()" style="padding:12px 10px;color:#fff;background:#7a2020;cursor:pointer;font-size:11px">خروج</div>
         </div>
     """.trimIndent()
 
@@ -439,7 +485,31 @@ object DashboardHtmlBuilder {
           document.getElementById('mfe').textContent=c.fd?(c.fd+' — '+c.ft+(c.fr?' — '+c.fr:'')):'-';
           document.getElementById('ov').classList.add('show');
         }
+        function openGrade(k){
+          var g=(typeof G!=='undefined')?G[k]:null; if(!g)return;
+          document.getElementById('mn').textContent=g.n;
+          document.getElementById('ms').textContent=v(g.c);
+          document.getElementById('mi').textContent='-';
+          document.getElementById('mmg').textContent=v(g.mg);
+          document.getElementById('mwg').textContent=v(g.wg);
+          document.getElementById('mfg').textContent=v(g.fg);
+          document.getElementById('mtg').textContent=v(g.tg)!=='-'?g.tg:(v(g.gc)!=='-'?g.gc:'-');
+          document.getElementById('mme').textContent='-';
+          document.getElementById('mfe').textContent='-';
+          document.getElementById('ov').classList.add('show');
+        }
         function cm(){document.getElementById('ov').classList.remove('show')}
+        function fp(el,m){
+          el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
+          el.classList.add('active');
+          document.querySelectorAll('.p-reg').forEach(function(x){x.style.display=(m==='reg')?'block':'none'});
+          document.querySelectorAll('.p-all').forEach(function(x){x.style.display=(m==='all')?'block':'none'});
+        }
+        function doLogout(){
+          if(confirm('تسجيل الخروج؟')){
+            if(typeof AndroidBridge!=='undefined') AndroidBridge.logout();
+          }
+        }
         function fg(el,m){
           el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
           el.classList.add('active');
