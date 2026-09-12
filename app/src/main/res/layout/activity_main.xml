@@ -31,19 +31,20 @@
             android:layout_height="wrap_content" />
     </LinearLayout>
 
+    <Button
+        android:id="@+id/btnSisDashboard"
+        android:text="لوحة SIS الذكية"
+        android:layout_marginHorizontal="8dp"
+        android:layout_marginBottom="8dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
     <LinearLayout
         android:id="@+id/buttonsLayout"
         android:orientation="horizontal"
         android:padding="8dp"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
-
-        <Button
-            android:id="@+id/btnSis"
-            android:text="SIS"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content" />
 
         <Button
             android:id="@+id/btnElearning"
@@ -59,14 +60,6 @@
             android:layout_weight="1"
             android:layout_height="wrap_content" />
     </LinearLayout>
-
-    <Button
-        android:id="@+id/btnSisDashboard"
-        android:text="لوحة SIS الذكية"
-        android:layout_marginHorizontal="8dp"
-        android:layout_marginBottom="8dp"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
 
     <WebView
         android:id="@+id/webView"
