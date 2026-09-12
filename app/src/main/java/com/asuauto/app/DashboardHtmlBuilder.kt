@@ -170,6 +170,7 @@ object DashboardHtmlBuilder {
         sb.append(kvBox("متوقع تخرجه", d.f("gradExpected")))
         sb.append(kvBox("المرشد الأكاديمي", d.f("advisor")))
         sb.append(kvBox("الوضع الأكاديمي", d.f("academicStatus")))
+        sb.append(kvBox("متبقي للتخرج", "${remainingCoursesCount()} مادة"))
         sb.append("</div>")
         if (d.f("regStart").isNotBlank() || d.f("addDropStart").isNotBlank()) {
             sb.append("<div class='sep'>")
@@ -231,12 +232,7 @@ object DashboardHtmlBuilder {
         return Math.round(h / 3.0).toInt()
     }
 
-    private fun plan(): String {
-        val details = DataStore.planDetails
-        if (details.isEmpty()) return "<div class='empty'>ما قدرنا نجيب الخطة الدراسية</div>"
-        val current = courses().keys
-        val sb = StringBuilder()
-
+    private fun remainingCoursesCount(): Int {
         var remainingHours = 0.0
         for (stat in DataStore.planStats) {
             if (stat.getOrNull(0) == "خارج الخطة") continue
@@ -244,9 +240,17 @@ object DashboardHtmlBuilder {
             val passed = stat.getOrNull(3)?.toDoubleOrNull() ?: 0.0
             remainingHours += (req - passed)
         }
-        val remainingCourses = Math.round(remainingHours / 3.0).toInt()
-        sb.append("<div class='card' style='text-align:center'><div class='muted'>متبقي لإنهاء الخطة</div><div style='font-size:22px;font-weight:bold;margin-top:4px'>$remainingCourses مادة</div></div>")
+        return Math.round(remainingHours / 3.0).toInt()
+    }
 
+    private fun plan(): String {
+        val details = DataStore.planDetails
+        if (details.isEmpty()) return "<div class='empty'>ما قدرنا نجيب الخطة الدراسية</div>"
+        val current = courses().keys
+        val sb = StringBuilder()
+
+        val remainingCourses = remainingCoursesCount()
+        sb.append("<div class='card' style='text-align:center'><div class='muted'>متبقي لإنهاء الخطة</div><div style='font-size:22px;font-weight:bold;margin-top:4px'>$remainingCourses مادة</div></div>")
         sb.append("<div class='filters'><div class='chip active' onclick=\"fp(this,'reg')\">المسجلة فقط</div><div class='chip' onclick=\"fp(this,'all')\">الخطة كاملة</div></div>")
         sb.append("<div class='legend'><span><i style='background:#27ae60'></i>مكتملة</span><span><i style='background:#3498db'></i>قيد الدراسة</span><span><i style='background:#e74c3c'></i>لم تُجتز</span><span><i style='background:#ccc'></i>لم تُدرس</span></div>")
 
@@ -380,7 +384,7 @@ object DashboardHtmlBuilder {
         val fi = colIdx(h, "الرسوم"); val pi = colIdx(h, "المدفوع"); val ci = colIdx(h, "نوع المطالبة")
 
         sb.append("<div class='filters'><div class='chip active' onclick=\"fa(this,'recent')\">آخر 3 أشهر</div><div class='chip' onclick=\"fa(this,'all')\">الكشف الكامل</div></div>")
-        sb.append("<div class='list'>")
+        sb.append("<div class='list' id='accList'>")
         for (r in 1 until rows.size) {
             val row = rows[r]
             fun c(i: Int) = if (i in row.indices) row[i].trim() else ""
@@ -388,12 +392,13 @@ object DashboardHtmlBuilder {
             val isDebit = fees.isNotBlank()
             val amount = if (isDebit) fees else paid
             val color = if (isDebit) "#E24B4A" else "#1D9E75"
-            val sign = if (isDebit) "-" else "+"
+            val tag = if (isDebit) "رسوم" else "دفعة"
             val label = c(ci).ifBlank { c(ti) }
             sb.append("<div class='arow' data-d=\"${esc(c(di))}\">")
             sb.append("<div><div class='rowTitle' style='font-size:13px'>${esc(label)}</div><div class='rowSub'>${esc(c(di))}</div></div>")
-            sb.append("<div style='color:$color;font-size:13px'>$sign${esc(amount)}</div></div>")
+            sb.append("<div style='text-align:left'><span class='pill' style='background:$color'>${esc(tag)}</span><div style='font-size:13px;margin-top:3px'>${esc(amount)}</div></div></div>")
         }
+        sb.append("<div class='empty' id='accEmpty' style='display:none'>ما فيه حركات بهذه الفترة</div>")
         sb.append("</div>")
         return sb.toString()
     }
@@ -436,6 +441,7 @@ object DashboardHtmlBuilder {
         .chip.active{background:#3498db;color:#fff}
         .empty{text-align:center;color:#aaa;padding:40px 10px}
         .gold{background:#caa23e;color:#fff;font-size:11px;padding:3px 10px;border-radius:12px}
+        .pill{color:#fff;font-size:10px;padding:2px 9px;border-radius:10px}
         .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
         .ov.show{display:flex}
         .modal{background:#fff;border-radius:14px;padding:16px;width:86%;max-width:340px}
@@ -464,6 +470,16 @@ object DashboardHtmlBuilder {
         <div class='kv'><span>امتحان المنتصف</span><span id='mme'></span></div>
         <div class='kv'><span>الامتحان النهائي</span><span id='mfe'></span></div>
         </div></div>
+        <div class='ov' id='gov' onclick="if(event.target===this)cgm()">
+        <div class='modal'>
+        <span onclick="cgm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
+        <div id='gmn' style='font-size:15px;font-weight:bold;margin-bottom:10px'></div>
+        <div class='kv'><span>رمز المقرر</span><span id='gmc'></span></div>
+        <div class='kv'><span>علامة المنتصف</span><span id='gmmid'></span></div>
+        <div class='kv'><span>أعمال أخرى</span><span id='gmwork'></span></div>
+        <div class='kv'><span>الامتحان النهائي</span><span id='gmfinal'></span></div>
+        <div class='kv'><span>المجموع</span><span id='gmtotal'></span></div>
+        </div></div>
         <script>
         function sp(el,id){
           document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
@@ -487,17 +503,15 @@ object DashboardHtmlBuilder {
         }
         function openGrade(k){
           var g=(typeof G!=='undefined')?G[k]:null; if(!g)return;
-          document.getElementById('mn').textContent=g.n;
-          document.getElementById('ms').textContent=v(g.c);
-          document.getElementById('mi').textContent='-';
-          document.getElementById('mmg').textContent=v(g.mg);
-          document.getElementById('mwg').textContent=v(g.wg);
-          document.getElementById('mfg').textContent=v(g.fg);
-          document.getElementById('mtg').textContent=v(g.tg)!=='-'?g.tg:(v(g.gc)!=='-'?g.gc:'-');
-          document.getElementById('mme').textContent='-';
-          document.getElementById('mfe').textContent='-';
-          document.getElementById('ov').classList.add('show');
+          document.getElementById('gmn').textContent=g.n;
+          document.getElementById('gmc').textContent=v(g.c);
+          document.getElementById('gmmid').textContent=v(g.mg);
+          document.getElementById('gmwork').textContent=v(g.wg);
+          document.getElementById('gmfinal').textContent=v(g.fg);
+          document.getElementById('gmtotal').textContent=v(g.tg)!=='-'?g.tg:(v(g.gc)!=='-'?g.gc:'-');
+          document.getElementById('gov').classList.add('show');
         }
+        function cgm(){document.getElementById('gov').classList.remove('show')}
         function cm(){document.getElementById('ov').classList.remove('show')}
         function fp(el,m){
           el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
@@ -506,9 +520,7 @@ object DashboardHtmlBuilder {
           document.querySelectorAll('.p-all').forEach(function(x){x.style.display=(m==='all')?'block':'none'});
         }
         function doLogout(){
-          if(confirm('تسجيل الخروج؟')){
-            if(typeof AndroidBridge!=='undefined') AndroidBridge.logout();
-          }
+          if(typeof AndroidBridge!=='undefined') AndroidBridge.logout();
         }
         function fg(el,m){
           el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
@@ -519,12 +531,19 @@ object DashboardHtmlBuilder {
           el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
           el.classList.add('active');
           var cut=new Date();cut.setMonth(cut.getMonth()-3);
+          var visible=0;
           document.querySelectorAll('.arow').forEach(function(r){
-            if(m==='all'){r.style.display='flex';return}
-            var p=(r.getAttribute('data-d')||'').split('-');
-            var d=p.length===3?new Date(p[2],p[1]-1,p[0]):null;
-            r.style.display=(d&&d>=cut)?'flex':'none';
+            var show=true;
+            if(m!=='all'){
+              var p=(r.getAttribute('data-d')||'').split('-');
+              var d=p.length===3?new Date(p[2],p[1]-1,p[0]):null;
+              show=(d&&d>=cut);
+            }
+            r.style.display=show?'flex':'none';
+            if(show)visible++;
           });
+          var empty=document.getElementById('accEmpty');
+          if(empty)empty.style.display=(visible===0)?'block':'none';
         }
         (function(){
           var c=document.querySelector('#account .chip');

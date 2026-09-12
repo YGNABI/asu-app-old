@@ -51,6 +51,14 @@ class SisDashboardActivity : AppCompatActivity() {
             var idx = t.indexOf('؟');
             return idx >= 0 ? t.substring(idx+1).trim() : t;
         }
+        function stillOnLogin() {
+            return document.querySelector('input[type="password"]') ? true : false;
+        }
+        function clickAccountNext() {
+            var a = document.querySelector('.t-Report-paginationLink--next');
+            if (a) { a.click(); return true; }
+            return false;
+        }
         function clickTabByLabel(label) {
             var panel = document.querySelector('[data-label="' + label + '"]');
             if (!panel || !panel.id) return false;
@@ -156,7 +164,7 @@ class SisDashboardActivity : AppCompatActivity() {
         webView.loadUrl("https://sis.asu.edu.bh/ords/f?p=101:1")
 
         webView.postDelayed({
-            if (phase != "done") {
+            if (phase != "done" && phase != "failed") {
                 phase = "done"
                 buildAndShowDashboard()
             }
@@ -214,6 +222,7 @@ class SisDashboardActivity : AppCompatActivity() {
                         phase = "afterLogin"
                     }
                     "afterLogin" -> {
+                        view.evaluateJavascript("AndroidBridge.checkLogin(stillOnLogin());", null)
                         if (sessionId.isEmpty()) return
                         setStatus("جاري جلب معلومات الطالب...")
                         view.loadUrl(pageUrl(1))
@@ -279,8 +288,13 @@ class SisDashboardActivity : AppCompatActivity() {
                     "account" -> {
                         view.evaluateJavascript("AndroidBridge.txt('balance', getById('P7_BALANCE'));", null)
                         view.evaluateJavascript("AndroidBridge.tbl('account', scrapeTableByLabel('تفاصيل كشف الحساب '));", null)
-                        phase = "done"
-                        view.postDelayed({ buildAndShowDashboard() }, 400)
+                        view.evaluateJavascript("clickAccountNext();", null)
+                        phase = "accountPage2"
+                        view.postDelayed({
+                            view.evaluateJavascript("AndroidBridge.tbl('account2', scrapeTableByLabel('تفاصيل كشف الحساب '));", null)
+                            phase = "done"
+                            view.postDelayed({ buildAndShowDashboard() }, 300)
+                        }, 1200)
                     }
                 }
             }
@@ -349,6 +363,19 @@ class SisDashboardActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun checkLogin(failed: Boolean) {
+            if (failed && phase != "done" && phase != "failed") {
+                phase = "failed"
+                runOnUiThread {
+                    resultWebView.visibility = View.GONE
+                    webView.visibility = View.GONE
+                    progressLayout.visibility = View.VISIBLE
+                    setStatus("اسم المستخدم أو الرقم السري غير صحيح ⚠️")
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun refresh() {
             runOnUiThread { startScraping() }
         }
@@ -381,7 +408,18 @@ class SisDashboardActivity : AppCompatActivity() {
         DataStore.semesterGrades = toList(rawTables["semesterGrades"])
         DataStore.attendance = toList(rawTables["attendance"])
         DataStore.transcript = toList(rawTables["transcript"])
-        DataStore.account = toList(rawTables["account"])
+        run {
+            val acc1 = toList(rawTables["account"])
+            val acc2 = toList(rawTables["account2"])
+            val header = acc1.firstOrNull()
+            val seen = LinkedHashSet<String>()
+            val dataRows = mutableListOf<List<String>>()
+            for (r in acc1.drop(1) + acc2.drop(1)) {
+                val key = r.joinToString("|")
+                if (seen.add(key)) dataRows.add(r)
+            }
+            DataStore.account = if (header != null) listOf(header) + dataRows else dataRows
+        }
         DataStore.planNames = planNames.toList()
         val details = LinkedHashMap<Int, List<List<String>>>()
         for (i in planLinks.indices) details[i] = toList(rawTables["planDetail_$i"])
