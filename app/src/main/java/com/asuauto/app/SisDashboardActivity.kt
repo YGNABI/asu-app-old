@@ -226,6 +226,14 @@ class SisDashboardActivity : AppCompatActivity() {
         }
 
         webView.loadUrl("https://sis.asu.edu.bh/ords/f?p=101:1")
+
+        // Safety net: never hang forever — show whatever we have after 15s
+        webView.postDelayed({
+            if (phase != "done") {
+                phase = "done"
+                buildAndShowDashboard()
+            }
+        }, 15000)
     }
 
     private fun setStatus(text: String) {
@@ -265,6 +273,7 @@ class SisDashboardActivity : AppCompatActivity() {
                     categoryNames = names
                 }
             } catch (e: Exception) {
+                // ignore malformed scrape, continue flow
             }
         }
     }
