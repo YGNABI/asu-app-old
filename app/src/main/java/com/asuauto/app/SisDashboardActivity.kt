@@ -9,6 +9,9 @@ import android.webkit.WebViewClient
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import org.json.JSONArray
 
 class SisDashboardActivity : AppCompatActivity() {
@@ -381,6 +384,22 @@ class SisDashboardActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun addCalendarEvent(title: String, dateStr: String, timeStr: String, location: String) {
+            runOnUiThread {
+                pendingEvent = Triple(title, dateStr, Pair(timeStr, location))
+                if (ContextCompat.checkSelfPermission(this@SisDashboardActivity, android.Manifest.permission.WRITE_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(
+                        this@SisDashboardActivity,
+                        arrayOf(android.Manifest.permission.WRITE_CALENDAR, android.Manifest.permission.READ_CALENDAR),
+                        101
+                    )
+                } else {
+                    insertCalendarEvent(title, dateStr, timeStr, location)
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun logout() {
             runOnUiThread {
                 android.webkit.CookieManager.getInstance().removeAllCookies(null)
@@ -425,11 +444,83 @@ class SisDashboardActivity : AppCompatActivity() {
         for (i in planLinks.indices) details[i] = toList(rawTables["planDetail_$i"])
         DataStore.planDetails = details
 
+        DashboardHtmlBuilder.LANG = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).apply()
         resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
         progressLayout.visibility = View.GONE
         resultWebView.visibility = View.VISIBLE
+    }
+
+    private var pendingEvent: Triple<String, String, Pair<String, String>>? = null
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 101 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            pendingEvent?.let { (title, date, tl) -> insertCalendarEvent(title, date, tl.first, tl.second) }
+        } else if (requestCode == 101) {
+            toast("نحتاج صلاحية التقويم لإضافة الموعد")
+        }
+        pendingEvent = null
+    }
+
+    private fun insertCalendarEvent(title: String, dateStr: String, timeStr: String, location: String) {
+        try {
+            val parts = dateStr.trim().split("-")
+            if (parts.size != 3) {
+                toast("تاريخ الامتحان غير متوفر")
+                return
+            }
+            val day = parts[0].trim().toInt()
+            val month = parts[1].trim().toInt()
+            val year = parts[2].trim().toInt()
+            var hour = 9
+            var minute = 0
+            if (timeStr.isNotBlank()) {
+                val tp = timeStr.trim().split(":")
+                hour = tp.getOrNull(0)?.trim()?.toIntOrNull() ?: 9
+                minute = tp.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
+            }
+            val cal = java.util.Calendar.getInstance()
+            cal.set(year, month - 1, day, hour, minute, 0)
+            val startMillis = cal.timeInMillis
+            val endMillis = startMillis + 60 * 60 * 1000
+
+            val calId = primaryCalendarId()
+            if (calId == null) {
+                toast("ما قدرنا نلقى تقويم بالجهاز")
+                return
+            }
+
+            val values = android.content.ContentValues().apply {
+                put(android.provider.CalendarContract.Events.DTSTART, startMillis)
+                put(android.provider.CalendarContract.Events.DTEND, endMillis)
+                put(android.provider.CalendarContract.Events.TITLE, title)
+                put(android.provider.CalendarContract.Events.EVENT_LOCATION, location)
+                put(android.provider.CalendarContract.Events.CALENDAR_ID, calId)
+                put(android.provider.CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
+            }
+            contentResolver.insert(android.provider.CalendarContract.Events.CONTENT_URI, values)
+            toast("انضاف للتقويم ✅")
+        } catch (e: Exception) {
+            toast("صار خطأ بالإضافة للتقويم")
+        }
+    }
+
+    private fun primaryCalendarId(): Long? {
+        val proj = arrayOf(android.provider.CalendarContract.Calendars._ID, android.provider.CalendarContract.Calendars.IS_PRIMARY)
+        val cursor = contentResolver.query(android.provider.CalendarContract.Calendars.CONTENT_URI, proj, null, null, null)
+        cursor?.use {
+            while (it.moveToNext()) {
+                if (it.getInt(1) == 1) return it.getLong(0)
+            }
+            if (it.moveToFirst()) return it.getLong(0)
+        }
+        return null
+    }
+
+    private fun toast(msg: String) {
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 

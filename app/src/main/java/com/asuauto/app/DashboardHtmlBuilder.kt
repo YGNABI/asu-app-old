@@ -2,6 +2,9 @@ package com.asuauto.app
 
 object DashboardHtmlBuilder {
 
+    var LANG = "ar"
+    private fun t(ar: String, en: String) = if (LANG == "en") en else ar
+
     private fun esc(s: String) = s.replace("\"", "&quot;").replace("<", "&lt;")
     private fun norm(s: String) = s.uppercase().replace(Regex("[^A-Z0-9]"), "")
 
@@ -63,9 +66,11 @@ object DashboardHtmlBuilder {
         var instructor = ""
         var midDate = ""
         var midTime = ""
+        var rawMidTime = ""
         var midRoom = ""
         var finDate = ""
         var finTime = ""
+        var rawFinTime = ""
         var finRoom = ""
         var att: Double? = null
         var midGrade = ""
@@ -100,8 +105,8 @@ object DashboardHtmlBuilder {
                 x.rawDays = c(di); x.rawFrom = c(fi)
                 x.days = daysAr(c(di)); x.from = to12h(c(fi)); x.to = to12h(c(ti))
                 x.room = c(ri); x.instructor = c(li)
-                x.midDate = c(mdi); x.midTime = to12h(c(mti)); x.midRoom = c(mri)
-                x.finDate = c(fdi); x.finTime = to12h(c(fti)); x.finRoom = c(fri)
+                x.midDate = c(mdi); x.midTime = to12h(c(mti)); x.rawMidTime = c(mti); x.midRoom = c(mri)
+                x.finDate = c(fdi); x.finTime = to12h(c(fti)); x.rawFinTime = c(fti); x.finRoom = c(fri)
                 map[norm(code)] = x
             }
         }
@@ -145,12 +150,12 @@ object DashboardHtmlBuilder {
 
     fun build(): String {
         val sb = StringBuilder()
-        sb.append(HEAD)
+        sb.append(HEAD())
         sb.append("<div id='home' class='page active'>").append(home()).append("</div>")
         sb.append("<div id='plan' class='page'>").append(plan()).append("</div>")
         sb.append("<div id='grades' class='page'>").append(grades()).append("</div>")
         sb.append("<div id='account' class='page'>").append(account()).append("</div>")
-        sb.append(SCRIPT)
+        sb.append(SCRIPT())
         return sb.toString()
     }
 
@@ -166,25 +171,25 @@ object DashboardHtmlBuilder {
         sb.append("<div class='avatar' style='background:$bg;color:$fg'>${esc(initials)}</div>")
         sb.append("<div><div class='big'>${esc(name)}</div><div class='muted'>${esc(d.f("studentCollege"))}</div></div></div>")
         sb.append("<div class='grid'>")
-        sb.append(kvBox("المعدل التراكمي", d.f("studentGpa")))
-        sb.append(kvBox("متوقع تخرجه", d.f("gradExpected")))
-        sb.append(kvBox("المرشد الأكاديمي", d.f("advisor")))
-        sb.append(kvBox("الوضع الأكاديمي", d.f("academicStatus")))
-        sb.append(kvBox("متبقي للتخرج", "${remainingCoursesCount()} مادة"))
+        sb.append(kvBox(t("المعدل التراكمي", "GPA"), d.f("studentGpa")))
+        sb.append(kvBox(t("متوقع تخرجه", "Expected to graduate"), d.f("gradExpected")))
+        sb.append(kvBox(t("المرشد الأكاديمي", "Academic Advisor"), d.f("advisor")))
+        sb.append(kvBox(t("الوضع الأكاديمي", "Academic Status"), d.f("academicStatus")))
+        sb.append(kvBox(t("متبقي للتخرج", "Remaining to graduate"), "${remainingCoursesCount()} ${t("مادة", "courses")}"))
         sb.append("</div>")
         if (d.f("regStart").isNotBlank() || d.f("addDropStart").isNotBlank()) {
             sb.append("<div class='sep'>")
             if (d.f("regStart").isNotBlank())
-                sb.append("<div class='kv'><span>فترة التسجيل</span><span>${esc(d.f("regStart"))} إلى ${esc(d.f("regEnd"))}</span></div>")
+                sb.append("<div class='kv'><span>${t("فترة التسجيل", "Registration period")}</span><span>${esc(d.f("regStart"))} ${t("إلى", "to")} ${esc(d.f("regEnd"))}</span></div>")
             if (d.f("addDropStart").isNotBlank())
-                sb.append("<div class='kv'><span>السحب والإضافة</span><span>${esc(d.f("addDropStart"))} إلى ${esc(d.f("addDropEnd"))}</span></div>")
+                sb.append("<div class='kv'><span>${t("السحب والإضافة", "Add/Drop period")}</span><span>${esc(d.f("addDropStart"))} ${t("إلى", "to")} ${esc(d.f("addDropEnd"))}</span></div>")
             sb.append("</div>")
         }
         sb.append("</div>")
 
         val cs = courses()
         if (cs.isEmpty()) {
-            sb.append("<div class='empty'>ما فيه مواد مسجلة</div>")
+            sb.append("<div class='empty'>${t("ما فيه مواد مسجلة", "No registered courses")}</div>")
             return sb.toString()
         }
         val dayOrder = mapOf('U' to 0, 'M' to 1, 'T' to 2, 'W' to 3, 'H' to 4, 'F' to 5, 'S' to 6)
@@ -200,7 +205,7 @@ object DashboardHtmlBuilder {
         ))
         sb.append("<div class='list'>")
         for ((k, c) in sorted) {
-            val disp = c.nameAr.ifBlank { c.nameEn }
+            val disp = if (LANG == "en") c.nameEn.ifBlank { c.nameAr } else c.nameAr.ifBlank { c.nameEn }
             val circle = if (c.att != null) {
                 val (b2, f2, black) = attColor(c.att!!)
                 val warn = if (black) "<span style='margin-left:4px;color:#E24B4A'>&#9888;</span>" else ""
@@ -215,10 +220,11 @@ object DashboardHtmlBuilder {
 
         sb.append("<script>var C={")
         for ((k, c) in cs) {
-            sb.append("\"$k\":{n:\"${esc(c.nameAr.ifBlank { c.nameEn })}\",s:\"${esc(c.section)}\",i:\"${esc(c.instructor)}\",")
+            val dispName = if (LANG == "en") c.nameEn.ifBlank { c.nameAr } else c.nameAr.ifBlank { c.nameEn }
+            sb.append("\"$k\":{n:\"${esc(dispName)}\",s:\"${esc(c.section)}\",i:\"${esc(c.instructor)}\",")
             sb.append("mg:\"${esc(c.midGrade)}\",wg:\"${esc(c.workGrade)}\",fg:\"${esc(c.finGrade)}\",tg:\"${esc(c.total)}\",gc:\"${esc(c.gradeCase)}\",")
-            sb.append("md:\"${esc(c.midDate)}\",mt:\"${esc(c.midTime)}\",mr:\"${esc(c.midRoom)}\",")
-            sb.append("fd:\"${esc(c.finDate)}\",ft:\"${esc(c.finTime)}\",fr:\"${esc(c.finRoom)}\"},")
+            sb.append("md:\"${esc(c.midDate)}\",mt:\"${esc(c.midTime)}\",mtr:\"${esc(c.rawMidTime)}\",mr:\"${esc(c.midRoom)}\",")
+            sb.append("fd:\"${esc(c.finDate)}\",ft:\"${esc(c.finTime)}\",ftr:\"${esc(c.rawFinTime)}\",fr:\"${esc(c.finRoom)}\"},")
         }
         sb.append("};</script>")
         return sb.toString()
@@ -245,14 +251,14 @@ object DashboardHtmlBuilder {
 
     private fun plan(): String {
         val details = DataStore.planDetails
-        if (details.isEmpty()) return "<div class='empty'>ما قدرنا نجيب الخطة الدراسية</div>"
+        if (details.isEmpty()) return "<div class='empty'>${t("ما قدرنا نجيب الخطة الدراسية", "Couldn't load the study plan")}</div>"
         val current = courses().keys
         val sb = StringBuilder()
 
         val remainingCourses = remainingCoursesCount()
-        sb.append("<div class='card' style='text-align:center'><div class='muted'>متبقي لإنهاء الخطة</div><div style='font-size:22px;font-weight:bold;margin-top:4px'>$remainingCourses مادة</div></div>")
-        sb.append("<div class='filters'><div class='chip active' onclick=\"fp(this,'reg')\">المسجلة فقط</div><div class='chip' onclick=\"fp(this,'all')\">الخطة كاملة</div></div>")
-        sb.append("<div class='legend'><span><i style='background:#27ae60'></i>مكتملة</span><span><i style='background:#3498db'></i>قيد الدراسة</span><span><i style='background:#e74c3c'></i>لم تُجتز</span><span><i style='background:#ccc'></i>لم تُدرس</span></div>")
+        sb.append("<div class='card' style='text-align:center'><div class='muted'>${t("متبقي لإنهاء الخطة", "Remaining to complete plan")}</div><div style='font-size:22px;font-weight:bold;margin-top:4px'>$remainingCourses ${t("مادة", "courses")}</div></div>")
+        sb.append("<div class='filters'><div class='chip active' onclick=\"fp(this,'reg')\">${t("المسجلة فقط", "Studied only")}</div><div class='chip' onclick=\"fp(this,'all')\">${t("الخطة كاملة", "Full plan")}</div></div>")
+        sb.append("<div class='legend'><span><i style='background:#27ae60'></i>${t("مكتملة", "Passed")}</span><span><i style='background:#3498db'></i>${t("قيد الدراسة", "In progress")}</span><span><i style='background:#e74c3c'></i>${t("لم تُجتز", "Not passed")}</span><span><i style='background:#ccc'></i>${t("لم تُدرس", "Not taken")}</span></div>")
 
         for (idx in details.keys.sorted()) {
             val rows = details[idx] ?: continue
@@ -261,7 +267,7 @@ object DashboardHtmlBuilder {
             val si = colIdx(h, "درسها"); val pi = colIdx(h, "اجتازها")
             val ni = colIdx(h, "اسم المقرر"); val ci = colIdx(h, "رمز"); val hi = colIdx(h, "عدد الساعات")
             val stat = DataStore.planStats.getOrNull(idx)
-            val catName = stat?.getOrNull(0) ?: DataStore.planNames.getOrNull(idx) ?: "فئة ${idx + 1}"
+            val catName = stat?.getOrNull(0) ?: DataStore.planNames.getOrNull(idx) ?: "${t("فئة", "Category")} ${idx + 1}"
 
             val itemsReg = mutableListOf<String>()
             val itemsAll = mutableListOf<String>()
@@ -273,7 +279,12 @@ object DashboardHtmlBuilder {
                 val code = c(ci)
                 val inProg = current.contains(norm(code))
                 val color = when { !studied -> "#ccc"; inProg -> "#3498db"; passed -> "#27ae60"; else -> "#e74c3c" }
-                val label = when { !studied -> "لم تُدرس"; inProg -> "قيد الدراسة"; passed -> "مكتملة"; else -> "لم تُجتز" }
+                val label = when {
+                    !studied -> t("لم تُدرس", "Not taken")
+                    inProg -> t("قيد الدراسة", "In progress")
+                    passed -> t("مكتملة", "Passed")
+                    else -> t("لم تُجتز", "Not passed")
+                }
                 val card = "<div class='pcard' style='border-right:5px solid $color'><div class='rowTitle'>${esc(c(ni))} <span class='codeTag'>${esc(code)}</span></div><div class='rowSub'>$label</div></div>"
                 itemsAll.add(card)
                 if (studied) itemsReg.add(card)
@@ -284,11 +295,11 @@ object DashboardHtmlBuilder {
             val passC = hoursToCourses(stat?.getOrNull(3) ?: "0")
             val notPassedC = (studC - passC).coerceAtLeast(0)
             sb.append("<div class='cat'><div class='catName'>${esc(catName)}</div>")
-            sb.append("<div class='catStats'>مطلوبة: $reqC · درسها: $studC · مجتازة: $passC · لم يجتزها: $notPassedC</div></div>")
+            sb.append("<div class='catStats'>${t("مطلوبة", "Required")}: $reqC · ${t("درسها", "Taken")}: $studC · ${t("مجتازة", "Passed")}: $passC · ${t("لم يجتزها", "Not passed")}: $notPassedC</div></div>")
             sb.append("<div class='p-reg'>"); itemsReg.forEach { sb.append(it) }; sb.append("</div>")
             sb.append("<div class='p-all' style='display:none'>"); itemsAll.forEach { sb.append(it) }; sb.append("</div>")
         }
-        if (sb.length < 300) return "<div class='empty'>ما فيه مواد مدروسة</div>"
+        if (sb.length < 300) return "<div class='empty'>${t("ما فيه مواد مدروسة", "No studied courses yet")}</div>"
         return sb.toString()
     }
 
@@ -303,25 +314,25 @@ object DashboardHtmlBuilder {
 
         sb.append("<div class='card'>")
         sb.append("<div style='display:flex;justify-content:space-between;align-items:center'>")
-        sb.append("<div class='muted'>ملخص كشف الدرجات</div>")
-        if (d.f("honorList") == "نعم") sb.append("<div class='gold'>لائحة الشرف</div>")
+        sb.append("<div class='muted'>${t("ملخص كشف الدرجات", "Grades Summary")}</div>")
+        if (d.f("honorList") == "نعم") sb.append("<div class='gold'>${t("لائحة الشرف", "Honor List")}</div>")
         sb.append("</div><div class='grid'>")
-        sb.append(kvBox("المعدل التراكمي", d.f("gpa")))
-        sb.append(kvBox("الساعات التراكمية", d.f("totalHours")))
-        sb.append(kvBox("ساعات ناجحة", d.f("passedHours")))
-        sb.append(kvBox("متبقي على الخطة", remaining))
+        sb.append(kvBox(t("المعدل التراكمي", "GPA"), d.f("gpa")))
+        sb.append(kvBox(t("الساعات التراكمية", "Cumulative Hours"), d.f("totalHours")))
+        sb.append(kvBox(t("ساعات ناجحة", "Passed Hours"), d.f("passedHours")))
+        sb.append(kvBox(t("متبقي على الخطة", "Remaining Hours"), remaining))
         sb.append("</div></div>")
 
         if (rows.isEmpty()) {
-            sb.append("<div class='empty'>ما قدرنا نجيب كشف الدرجات</div>")
+            sb.append("<div class='empty'>${t("ما قدرنا نجيب كشف الدرجات", "Couldn't load the grade report")}</div>")
             return sb.toString()
         }
 
         sb.append("<div class='legend2'>")
-        listOf("#1D9E75" to "٩٠-١٠٠", "#0F6E56" to "٨٠-٨٩", "#378ADD" to "٧٠-٧٩", "#BA7517" to "٦٠-٦٩", "#E24B4A" to "٥٠-٥٩", "#1a1a1a" to "أقل من ٥٠")
-            .forEach { (c, t) -> sb.append("<span><i style='background:$c'></i>$t</span>") }
+        listOf("#1D9E75" to "٩٠-١٠٠", "#0F6E56" to "٨٠-٨٩", "#378ADD" to "٧٠-٧٩", "#BA7517" to "٦٠-٦٩", "#E24B4A" to "٥٠-٥٩", "#1a1a1a" to t("أقل من ٥٠", "Below 50"))
+            .forEach { (col, lbl) -> sb.append("<span><i style='background:$col'></i>$lbl</span>") }
         sb.append("</div>")
-        sb.append("<div class='filters'><div class='chip active' onclick=\"fg(this,'all')\">الكل</div><div class='chip' onclick=\"fg(this,'sem')\">حسب الفصل</div></div>")
+        sb.append("<div class='filters'><div class='chip active' onclick=\"fg(this,'all')\">${t("الكل", "All")}</div><div class='chip' onclick=\"fg(this,'sem')\">${t("حسب الفصل", "By Semester")}</div></div>")
 
         val gMap = StringBuilder("<script>var G={")
         var gi = 0
@@ -345,7 +356,7 @@ object DashboardHtmlBuilder {
             val circleTxt = if (num != null) totalG else if (case.isNotBlank() && case != "-") case.take(4) else "-"
             sb.append("<div class='row' style='background:#fff;border-radius:8px;margin-bottom:8px;border-right:5px solid $color' onclick=\"openGrade('$key')\">")
             sb.append("<div><div class='rowTitle'>${esc(name)} <span class='codeTag'>${esc(code)}</span></div>")
-            sb.append("<div class='rowSub'>منتصف: ${esc(mid)} · أعمال: ${esc(work)} · نهائي: ${esc(fin)}</div></div>")
+            sb.append("<div class='rowSub'>${t("منتصف", "Mid")}: ${esc(mid)} · ${t("أعمال", "Work")}: ${esc(work)} · ${t("نهائي", "Final")}: ${esc(fin)}</div></div>")
             sb.append("<div class='circle' style='background:$color;color:#fff;flex-shrink:0'>${esc(circleTxt)}</div>")
             sb.append("</div>")
             gMap.append("\"$key\":{n:\"${esc(name)}\",c:\"${esc(code)}\",mg:\"${esc(mid)}\",wg:\"${esc(work)}\",fg:\"${esc(fin)}\",tg:\"${esc(totalG)}\",gc:\"${esc(case)}\"},")
@@ -364,26 +375,26 @@ object DashboardHtmlBuilder {
         else if (d.f("inst2Paid") == "لا") nextInst = d.f("inst2")
         else if (d.f("inst3Paid") == "لا") nextInst = d.f("inst3")
 
-        sb.append("<div class='card'><div class='muted'>ملخص الحساب</div><div class='grid'>")
-        sb.append("<div><div class='lbl'>الرصيد المطلوب</div><div class='val' style='color:#E24B4A;font-weight:bold'>${esc(d.f("balance"))}</div></div>")
-        sb.append(kvBox("القسط القادم", nextInst))
+        sb.append("<div class='card'><div class='muted'>${t("ملخص الحساب", "Account Summary")}</div><div class='grid'>")
+        sb.append("<div><div class='lbl'>${t("الرصيد المطلوب", "Balance Due")}</div><div class='val' style='color:#E24B4A;font-weight:bold'>${esc(d.f("balance"))}</div></div>")
+        sb.append(kvBox(t("القسط القادم", "Next Installment"), nextInst))
         sb.append("</div>")
         sb.append("<div class='sep'>")
-        sb.append("<div class='kv'><span>القسط الأول</span><span>${esc(d.f("inst1"))} — ${if (d.f("inst1Paid") == "لا") "غير مدفوع" else "مدفوع"}</span></div>")
-        sb.append("<div class='kv'><span>القسط الثاني</span><span>${esc(d.f("inst2"))} — ${if (d.f("inst2Paid") == "لا") "غير مدفوع" else "مدفوع"}</span></div>")
-        sb.append("<div class='kv'><span>القسط الثالث</span><span>${esc(d.f("inst3"))} — ${if (d.f("inst3Paid") == "لا") "غير مدفوع" else "مدفوع"}</span></div>")
+        sb.append("<div class='kv'><span>${t("القسط الأول", "1st Installment")}</span><span>${esc(d.f("inst1"))} — ${if (d.f("inst1Paid") == "لا") t("غير مدفوع", "Unpaid") else t("مدفوع", "Paid")}</span></div>")
+        sb.append("<div class='kv'><span>${t("القسط الثاني", "2nd Installment")}</span><span>${esc(d.f("inst2"))} — ${if (d.f("inst2Paid") == "لا") t("غير مدفوع", "Unpaid") else t("مدفوع", "Paid")}</span></div>")
+        sb.append("<div class='kv'><span>${t("القسط الثالث", "3rd Installment")}</span><span>${esc(d.f("inst3"))} — ${if (d.f("inst3Paid") == "لا") t("غير مدفوع", "Unpaid") else t("مدفوع", "Paid")}</span></div>")
         sb.append("</div></div>")
 
         val rows = d.account
         if (rows.size < 2) {
-            sb.append("<div class='empty'>ما قدرنا نجيب كشف الحساب</div>")
+            sb.append("<div class='empty'>${t("ما قدرنا نجيب كشف الحساب", "Couldn't load the account statement")}</div>")
             return sb.toString()
         }
         val h = rows[0]
         val di = colIdx(h, "التاريخ"); val ti = colIdx(h, "نوع الوثيقة")
         val fi = colIdx(h, "الرسوم"); val pi = colIdx(h, "المدفوع"); val ci = colIdx(h, "نوع المطالبة")
 
-        sb.append("<div class='filters'><div class='chip active' onclick=\"fa(this,'recent')\">آخر 3 أشهر</div><div class='chip' onclick=\"fa(this,'all')\">الكشف الكامل</div></div>")
+        sb.append("<div class='filters'><div class='chip active' onclick=\"fa(this,'recent')\">${t("آخر 3 أشهر", "Last 3 months")}</div><div class='chip' onclick=\"fa(this,'all')\">${t("الكشف الكامل", "Full statement")}</div></div>")
         sb.append("<div class='list' id='accList'>")
         for (r in 1 until rows.size) {
             val row = rows[r]
@@ -392,19 +403,22 @@ object DashboardHtmlBuilder {
             val isDebit = fees.isNotBlank()
             val amount = if (isDebit) fees else paid
             val color = if (isDebit) "#E24B4A" else "#1D9E75"
-            val tag = if (isDebit) "رسوم" else "دفعة"
+            val tag = if (isDebit) t("رسوم", "Fee") else t("دفعة", "Payment")
             val label = c(ci).ifBlank { c(ti) }
             sb.append("<div class='arow' data-d=\"${esc(c(di))}\">")
             sb.append("<div><div class='rowTitle' style='font-size:13px'>${esc(label)}</div><div class='rowSub'>${esc(c(di))}</div></div>")
             sb.append("<div style='text-align:left'><span class='pill' style='background:$color'>${esc(tag)}</span><div style='font-size:13px;margin-top:3px'>${esc(amount)}</div></div></div>")
         }
-        sb.append("<div class='empty' id='accEmpty' style='display:none'>ما فيه حركات بهذه الفترة</div>")
+        sb.append("<div class='empty' id='accEmpty' style='display:none'>${t("ما فيه حركات بهذه الفترة", "No transactions in this period")}</div>")
         sb.append("</div>")
         return sb.toString()
     }
 
-    private val HEAD = """
-        <html dir="rtl" lang="ar"><head><meta charset="utf-8">
+    private fun HEAD(): String {
+        val dir = if (LANG == "en") "ltr" else "rtl"
+        val langCode = if (LANG == "en") "en" else "ar"
+        return """
+        <html dir="$dir" lang="$langCode"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
         body{font-family:sans-serif;background:#f2f3f5;margin:0}
@@ -442,43 +456,53 @@ object DashboardHtmlBuilder {
         .empty{text-align:center;color:#aaa;padding:40px 10px}
         .gold{background:#caa23e;color:#fff;font-size:11px;padding:3px 10px;border-radius:12px}
         .pill{color:#fff;font-size:10px;padding:2px 9px;border-radius:10px}
+        .calBtn{display:inline-block;margin-top:6px;background:#eef4fb;color:#2c6cb0;font-size:11px;padding:5px 10px;border-radius:8px;cursor:pointer}
         .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
         .ov.show{display:flex}
         .modal{background:#fff;border-radius:14px;padding:16px;width:86%;max-width:340px}
         </style></head><body>
         <div class="tabs">
-        <div class="tab active" onclick="sp(this,'home')">الرئيسية</div>
-        <div class="tab" onclick="sp(this,'plan')">الخطة</div>
-        <div class="tab" onclick="sp(this,'grades')">الدرجات</div>
-        <div class="tab" onclick="sp(this,'account')">الحساب</div>
+        <div class="tab active" onclick="sp(this,'home')">${t("الرئيسية", "Home")}</div>
+        <div class="tab" onclick="sp(this,'plan')">${t("الخطة", "Plan")}</div>
+        <div class="tab" onclick="sp(this,'grades')">${t("الدرجات", "Grades")}</div>
+        <div class="tab" onclick="sp(this,'account')">${t("الحساب", "Account")}</div>
         <div onclick="if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh()" style="padding:12px 10px;color:#fff;background:#1a252f;cursor:pointer">&#8635;</div>
-        <div onclick="doLogout()" style="padding:12px 10px;color:#fff;background:#7a2020;cursor:pointer;font-size:11px">خروج</div>
         </div>
-    """.trimIndent()
+        """.trimIndent()
+    }
 
-    private val SCRIPT = """
+    private fun SCRIPT(): String {
+        val calLbl = t("أضف للتقويم", "Add to Calendar")
+        val lSection = t("الشعبة", "Section"); val lTeacher = t("المدرس", "Instructor")
+        val lMidGrade = t("علامة المنتصف", "Midterm Grade"); val lWork = t("أعمال أخرى", "Other Work")
+        val lFinGrade = t("علامة الامتحان النهائي", "Final Exam Grade"); val lTotal = t("المجموع", "Total")
+        val lMidExam = t("امتحان المنتصف", "Midterm Exam"); val lFinExam = t("الامتحان النهائي", "Final Exam")
+        val lCode = t("رمز المقرر", "Course Code")
+        return """
+        <script>var CALLBL="$calLbl";</script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
         <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
         <div id='mn' style='font-size:15px;font-weight:bold;margin-bottom:10px'></div>
-        <div class='kv'><span>الشعبة</span><span id='ms'></span></div>
-        <div class='kv'><span>المدرس</span><span id='mi'></span></div>
-        <div class='kv'><span>علامة المنتصف</span><span id='mmg'></span></div>
-        <div class='kv'><span>أعمال أخرى</span><span id='mwg'></span></div>
-        <div class='kv'><span>علامة الامتحان النهائي</span><span id='mfg'></span></div>
-        <div class='kv'><span>المجموع</span><span id='mtg'></span></div>
-        <div class='kv'><span>امتحان المنتصف</span><span id='mme'></span></div>
-        <div class='kv'><span>الامتحان النهائي</span><span id='mfe'></span></div>
+        <div class='kv'><span>$lSection</span><span id='ms'></span></div>
+        <div class='kv'><span>$lTeacher</span><span id='mi'></span></div>
+        <div class='kv'><span>$lMidGrade</span><span id='mmg'></span></div>
+        <div class='kv'><span>$lWork</span><span id='mwg'></span></div>
+        <div class='kv'><span>$lFinGrade</span><span id='mfg'></span></div>
+        <div class='kv'><span>$lTotal</span><span id='mtg'></span></div>
+        <div class='kv'><span>$lMidExam</span><span id='mme'></span></div>
+        <div class='kv'><span>$lFinExam</span><span id='mfe'></span></div>
+        <div id='mCalBtns'></div>
         </div></div>
         <div class='ov' id='gov' onclick="if(event.target===this)cgm()">
         <div class='modal'>
         <span onclick="cgm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
         <div id='gmn' style='font-size:15px;font-weight:bold;margin-bottom:10px'></div>
-        <div class='kv'><span>رمز المقرر</span><span id='gmc'></span></div>
-        <div class='kv'><span>علامة المنتصف</span><span id='gmmid'></span></div>
-        <div class='kv'><span>أعمال أخرى</span><span id='gmwork'></span></div>
-        <div class='kv'><span>الامتحان النهائي</span><span id='gmfinal'></span></div>
-        <div class='kv'><span>المجموع</span><span id='gmtotal'></span></div>
+        <div class='kv'><span>$lCode</span><span id='gmc'></span></div>
+        <div class='kv'><span>$lMidGrade</span><span id='gmmid'></span></div>
+        <div class='kv'><span>$lWork</span><span id='gmwork'></span></div>
+        <div class='kv'><span>$lFinExam</span><span id='gmfinal'></span></div>
+        <div class='kv'><span>$lTotal</span><span id='gmtotal'></span></div>
         </div></div>
         <script>
         function sp(el,id){
@@ -499,6 +523,10 @@ object DashboardHtmlBuilder {
           document.getElementById('mtg').textContent=v(c.tg)!=='-'?c.tg:(v(c.gc)!=='-'?c.gc:'لم تصدر');
           document.getElementById('mme').textContent=c.md?(c.md+' — '+c.mt+(c.mr?' — '+c.mr:'')):'-';
           document.getElementById('mfe').textContent=c.fd?(c.fd+' — '+c.ft+(c.fr?' — '+c.fr:'')):'-';
+          var btnsHtml='';
+          if(c.md) btnsHtml+="<span class='calBtn' onclick=\"addExamToCal('"+c.n+" - Midterm','"+c.md+"','"+c.mtr+"','"+c.mr+"')\">"+CALLBL+"</span> ";
+          if(c.fd) btnsHtml+="<span class='calBtn' onclick=\"addExamToCal('"+c.n+" - Final','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+CALLBL+"</span>";
+          document.getElementById('mCalBtns').innerHTML=btnsHtml;
           document.getElementById('ov').classList.add('show');
         }
         function openGrade(k){
@@ -521,6 +549,12 @@ object DashboardHtmlBuilder {
         }
         function doLogout(){
           if(typeof AndroidBridge!=='undefined') AndroidBridge.logout();
+        }
+        function addExamToCal(name,date,time,room){
+          if(typeof AndroidBridge!=='undefined') AndroidBridge.addCalendarEvent(name,date,time,room||'');
+        }
+        function addInstallmentToCal(name,date){
+          if(typeof AndroidBridge!=='undefined') AndroidBridge.addCalendarEvent(name,date,'','');
         }
         function fg(el,m){
           el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
@@ -551,4 +585,5 @@ object DashboardHtmlBuilder {
         })();
         </script></body></html>
     """.trimIndent()
+    }
 }
