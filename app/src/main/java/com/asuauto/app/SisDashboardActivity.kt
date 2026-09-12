@@ -52,6 +52,13 @@ class SisDashboardActivity : AppCompatActivity() {
             if (el) { el.click(); return true; }
             return false;
         }
+        function clickTabByLabel(label) {
+            var panel = document.querySelector('[data-label="' + label + '"]');
+            if (!panel || !panel.id) return false;
+            var tabBtn = document.getElementById(panel.id + '_tab');
+            if (tabBtn) { tabBtn.click(); return true; }
+            return false;
+        }
         function scrapeAllTables() {
             var tables = document.querySelectorAll('table');
             var result = [];
@@ -155,20 +162,20 @@ class SisDashboardActivity : AppCompatActivity() {
                     "registrationBase" -> {
                         view.evaluateJavascript("AndroidBridge.onScraped('studentBasic', scrapeAllTables());", null)
                         view.postDelayed({
-                            view.evaluateJavascript("clickNth('المواد المسجلة للفصل الحالي', 0);", null)
+                            view.evaluateJavascript("if(!clickTabByLabel('المواد المسجلة للفصل الحالي')) clickNth('المواد المسجلة للفصل الحالي',0);", null)
                             view.postDelayed({
                                 view.evaluateJavascript("AndroidBridge.onScraped('registration', scrapeAllTables());", null)
-                                view.evaluateJavascript("clickNth('علامات الفصل', 0);", null)
+                                view.evaluateJavascript("if(!clickTabByLabel('علامات الفصل')) clickNth('علامات الفصل',0);", null)
                                 view.postDelayed({
                                     view.evaluateJavascript("AndroidBridge.onScraped('semesterGrades', scrapeAllTables());", null)
-                                    view.evaluateJavascript("clickNth('احصائيات الحضور والغياب', 0);", null)
+                                    view.evaluateJavascript("if(!clickTabByLabel('احصائيات الحضور والغياب')) clickNth('احصائيات الحضور والغياب',0);", null)
                                     view.postDelayed({
                                         view.evaluateJavascript("AndroidBridge.onScraped('attendance', scrapeAllTables());", null)
                                         setStatus("جاري جلب الخطة الدراسية...")
                                         view.loadUrl(pageUrl(3))
-                                    }, 900)
-                                }, 900)
-                            }, 900)
+                                    }, 1500)
+                                }, 1500)
+                            }, 1500)
                         }, 300)
                         phase = "planSummary"
                     }
@@ -227,13 +234,13 @@ class SisDashboardActivity : AppCompatActivity() {
 
         webView.loadUrl("https://sis.asu.edu.bh/ords/f?p=101:1")
 
-        // Safety net: never hang forever — show whatever we have after 15s
+        // Safety net: never hang forever — show whatever we have after 60s
         webView.postDelayed({
             if (phase != "done") {
                 phase = "done"
                 buildAndShowDashboard()
             }
-        }, 15000)
+        }, 60000)
     }
 
     private fun setStatus(text: String) {
@@ -310,12 +317,25 @@ class SisDashboardActivity : AppCompatActivity() {
         return rows
     }
 
+    private fun pickTableContainingCell(tables: JSONArray, cellText: String): List<List<String>> {
+        for (i in 0 until tables.length()) {
+            val t = tables.getJSONArray(i)
+            for (r in 0 until t.length()) {
+                val row = t.getJSONArray(r)
+                for (c in 0 until row.length()) {
+                    if (row.getString(c).trim() == cellText) return jsonTableToList(t)
+                }
+            }
+        }
+        return emptyList()
+    }
+
     private fun buildAndShowDashboard() {
-        DataStore.studentBasic = rawTables["studentBasic"]?.let { pickLargestTable(it) } ?: mutableListOf()
-        DataStore.regTimes = rawTables["regTimes"]?.let { pickLargestTable(it) } ?: mutableListOf()
-        DataStore.registration = rawTables["registration"]?.let { pickLargestTable(it) } ?: mutableListOf()
-        DataStore.semesterGrades = rawTables["semesterGrades"]?.let { pickLargestTable(it) } ?: mutableListOf()
-        DataStore.attendance = rawTables["attendance"]?.let { pickLargestTable(it) } ?: mutableListOf()
+        DataStore.studentBasic = rawTables["studentBasic"]?.let { pickTableContainingCell(it, "Name") } ?: emptyList()
+        DataStore.regTimes = rawTables["regTimes"]?.let { pickTableContainingCell(it, "متوقع تخرجه") } ?: emptyList()
+        DataStore.registration = rawTables["registration"]?.let { pickTableWithHeaderContaining(it, "قاعة الامتحان النهائي") } ?: emptyList()
+        DataStore.semesterGrades = rawTables["semesterGrades"]?.let { pickTableWithHeaderContaining(it, "حالة العلامة") } ?: emptyList()
+        DataStore.attendance = rawTables["attendance"]?.let { pickTableWithHeaderContaining(it, "الغياب") } ?: emptyList()
         DataStore.planDetails = planDetails
         DataStore.categoryNames = categoryNames
         DataStore.grades = rawTables["grades"]?.let { pickLargestTable(it) } ?: mutableListOf()
