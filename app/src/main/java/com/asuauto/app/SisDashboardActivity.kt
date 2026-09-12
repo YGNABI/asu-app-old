@@ -119,13 +119,21 @@ class SisDashboardActivity : AppCompatActivity() {
                             (function(){
                                 var userField = document.querySelector('input[type="text"]');
                                 var passField = document.querySelector('input[type="password"]');
-                                if (userField && passField && !passField.value) {
+                                if (userField && passField) {
                                     userField.value = "$user";
                                     passField.value = "$pass";
                                     userField.dispatchEvent(new Event('input', {bubbles:true}));
                                     passField.dispatchEvent(new Event('input', {bubbles:true}));
                                     var btn = document.querySelector('button[type="submit"]') || document.querySelector('input[type="submit"]');
-                                    if (btn) setTimeout(function(){ btn.click(); }, 300);
+                                    if (!btn) {
+                                        var buttons = document.querySelectorAll('button');
+                                        for (var i=0;i<buttons.length;i++){
+                                            var t = buttons[i].textContent.trim().toLowerCase();
+                                            if (t.indexOf('login') !== -1 || t.indexOf('دخول') !== -1) { btn = buttons[i]; break; }
+                                        }
+                                        if (!btn && buttons.length === 1) btn = buttons[0];
+                                    }
+                                    if (btn) setTimeout(function(){ btn.click(); }, 500);
                                 }
                             })();
                         """.trimIndent()
