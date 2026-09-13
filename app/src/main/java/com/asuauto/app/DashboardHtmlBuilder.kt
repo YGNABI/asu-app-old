@@ -229,6 +229,47 @@ object DashboardHtmlBuilder {
             sb.append("mid:\"${esc(moodleId)}\"},")
         }
         sb.append("};</script>")
+
+        if (DataStore.moodleCourses.isNotEmpty() || cs.isNotEmpty()) {
+            sb.append(debugMoodleMatchSection(cs))
+        }
+        return sb.toString()
+    }
+
+    /**
+     * Temporary diagnostic block: shows exactly what name each side scraped
+     * and whether the matcher linked them, so name-normalization mismatches
+     * (Arabic vs English name column, extra words, punctuation) are visible
+     * directly in the app instead of guessing blind. Remove once matching
+     * is confirmed working for all courses.
+     */
+    private fun debugMoodleMatchSection(cs: LinkedHashMap<String, Course>): String {
+        val sb = StringBuilder()
+        sb.append("<div class='card' style='margin-top:14px;border:1px dashed #cc8'>")
+        sb.append("<div class='muted' style='margin-bottom:8px'>🔧 تشخيص مؤقت — مطابقة Moodle</div>")
+
+        sb.append("<div style='font-size:11px;color:#888;margin-bottom:6px'>مواد Moodle المسحوبة (${DataStore.moodleCourses.size}):</div>")
+        if (DataStore.moodleCourses.isEmpty()) {
+            sb.append("<div style='font-size:11px;color:#c33'>ما انسحب ولا مادة من /my/ — يعني مرحلة moodleCourses فشلت أو الدخول فشل.</div>")
+        } else {
+            for (mc in DataStore.moodleCourses) {
+                sb.append("<div style='font-size:11px;color:#555'>• ${esc(mc.name)} (id=${esc(mc.moodleId)})</div>")
+            }
+        }
+
+        sb.append("<div style='font-size:11px;color:#888;margin:10px 0 6px'>مواد SIS ومطابقتها:</div>")
+        for ((k, c) in cs) {
+            val moodleId = DataStore.moodleCourseMap[k]
+            val sisName = c.nameEn.ifBlank { c.nameAr }
+            val matchTxt = if (moodleId != null) {
+                val matchedName = DataStore.moodleCourses.find { it.moodleId == moodleId }?.name ?: "?"
+                "<span style='color:#3B6D11'>✔ تطابق مع: ${esc(matchedName)}</span>"
+            } else {
+                "<span style='color:#c33'>✘ لا يوجد تطابق</span>"
+            }
+            sb.append("<div style='font-size:11px;color:#333;margin-bottom:4px'>${esc(sisName)} (${esc(c.code)}) — $matchTxt</div>")
+        }
+        sb.append("</div>")
         return sb.toString()
     }
 
