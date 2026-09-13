@@ -29,7 +29,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 3
+    private val CACHE_VERSION = 4
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -449,6 +449,17 @@ class SisDashboardActivity : AppCompatActivity() {
                 } else {
                     insertCalendarEvent(title, dateStr, timeStr, location)
                 }
+            }
+        }
+
+        @JavascriptInterface
+        fun openCourseMaterials(moodleId: String, courseName: String) {
+            runOnUiThread {
+                if (moodleId.isBlank()) return@runOnUiThread
+                val intent = android.content.Intent(this@SisDashboardActivity, CourseMaterialsActivity::class.java)
+                intent.putExtra("moodleId", moodleId)
+                intent.putExtra("courseName", courseName)
+                startActivity(intent)
             }
         }
 

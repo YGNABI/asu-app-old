@@ -221,10 +221,12 @@ object DashboardHtmlBuilder {
         sb.append("<script>var C={")
         for ((k, c) in cs) {
             val dispName = if (LANG == "en") c.nameEn.ifBlank { c.nameAr } else c.nameAr.ifBlank { c.nameEn }
+            val moodleId = DataStore.moodleCourseMap[k] ?: ""
             sb.append("\"$k\":{n:\"${esc(dispName)}\",s:\"${esc(c.section)}\",i:\"${esc(c.instructor)}\",")
             sb.append("mg:\"${esc(c.midGrade)}\",wg:\"${esc(c.workGrade)}\",fg:\"${esc(c.finGrade)}\",tg:\"${esc(c.total)}\",gc:\"${esc(c.gradeCase)}\",")
             sb.append("md:\"${esc(c.midDate)}\",mt:\"${esc(c.midTime)}\",mtr:\"${esc(c.rawMidTime)}\",mr:\"${esc(c.midRoom)}\",")
-            sb.append("fd:\"${esc(c.finDate)}\",ft:\"${esc(c.finTime)}\",ftr:\"${esc(c.rawFinTime)}\",fr:\"${esc(c.finRoom)}\"},")
+            sb.append("fd:\"${esc(c.finDate)}\",ft:\"${esc(c.finTime)}\",ftr:\"${esc(c.rawFinTime)}\",fr:\"${esc(c.finRoom)}\",")
+            sb.append("mid:\"${esc(moodleId)}\"},")
         }
         sb.append("};</script>")
         return sb.toString()
@@ -475,13 +477,14 @@ object DashboardHtmlBuilder {
         val calLbl = t("أضف للتقويم", "Add to Calendar")
         val calLblMid = t("أضف امتحان المنتصف للتقويم", "Add Midterm to Calendar")
         val calLblFin = t("أضف الامتحان النهائي للتقويم", "Add Final to Calendar")
+        val materialsLbl = t("عرض المادة التعليمية", "View Course Materials")
         val lSection = t("الشعبة", "Section"); val lTeacher = t("المدرس", "Instructor")
         val lMidGrade = t("علامة المنتصف", "Midterm Grade"); val lWork = t("أعمال أخرى", "Other Work")
         val lFinGrade = t("علامة الامتحان النهائي", "Final Exam Grade"); val lTotal = t("المجموع", "Total")
         val lMidExam = t("امتحان المنتصف", "Midterm Exam"); val lFinExam = t("الامتحان النهائي", "Final Exam")
         val lCode = t("رمز المقرر", "Course Code")
         return """
-        <script>var CALLBL="$calLbl",CALLBL_MID="$calLblMid",CALLBL_FIN="$calLblFin";</script>
+        <script>var CALLBL="$calLbl",CALLBL_MID="$calLblMid",CALLBL_FIN="$calLblFin",MATERIALSLBL="$materialsLbl";</script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
         <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
@@ -495,6 +498,7 @@ object DashboardHtmlBuilder {
         <div class='kv'><span>$lMidExam</span><span id='mme'></span></div>
         <div class='kv'><span>$lFinExam</span><span id='mfe'></span></div>
         <div id='mCalBtns'></div>
+        <div id='mMaterialsBtn'></div>
         </div></div>
         <div class='ov' id='gov' onclick="if(event.target===this)cgm()">
         <div class='modal'>
@@ -529,6 +533,8 @@ object DashboardHtmlBuilder {
           if(c.md) btnsHtml+="<span class='calBtn' onclick=\"addExamToCal('"+c.n+" - Midterm','"+c.md+"','"+c.mtr+"','"+c.mr+"')\">"+CALLBL_MID+"</span> ";
           if(c.fd) btnsHtml+="<span class='calBtn' onclick=\"addExamToCal('"+c.n+" - Final','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+CALLBL_FIN+"</span>";
           document.getElementById('mCalBtns').innerHTML=btnsHtml;
+          var matHtml = c.mid ? "<span class='calBtn' onclick=\"openCourseMaterials('"+c.mid+"','"+c.n+"')\">"+MATERIALSLBL+"</span>" : '';
+          document.getElementById('mMaterialsBtn').innerHTML = matHtml;
           document.getElementById('ov').classList.add('show');
         }
         function openGrade(k){
@@ -557,6 +563,9 @@ object DashboardHtmlBuilder {
         }
         function addInstallmentToCal(name,date){
           if(typeof AndroidBridge!=='undefined') AndroidBridge.addCalendarEvent(name,date,'','');
+        }
+        function openCourseMaterials(moodleId,courseName){
+          if(typeof AndroidBridge!=='undefined') AndroidBridge.openCourseMaterials(moodleId,courseName);
         }
         function fg(el,m){
           el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
