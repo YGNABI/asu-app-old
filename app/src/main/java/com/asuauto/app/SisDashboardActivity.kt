@@ -29,6 +29,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
+    private val CACHE_VERSION = 3
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -303,7 +304,9 @@ class SisDashboardActivity : AppCompatActivity() {
             }
         }
 
-        val cached = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).getString("html", null)
+        val cachePrefs = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE)
+        val cachedVersion = cachePrefs.getInt("version", -1)
+        val cached = if (cachedVersion == CACHE_VERSION) cachePrefs.getString("html", null) else null
         if (cached != null) {
             progressLayout.visibility = View.GONE
             resultWebView.visibility = View.VISIBLE
@@ -446,7 +449,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
         DashboardHtmlBuilder.LANG = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
         val html = DashboardHtmlBuilder.build()
-        getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).apply()
+        getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).putInt("version", CACHE_VERSION).apply()
         resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
         progressLayout.visibility = View.GONE
         resultWebView.visibility = View.VISIBLE
@@ -489,6 +492,19 @@ class SisDashboardActivity : AppCompatActivity() {
             val calId = primaryCalendarId()
             if (calId == null) {
                 toast("ما قدرنا نلقى تقويم بالجهاز")
+                return
+            }
+
+            val existsCursor = contentResolver.query(
+                android.provider.CalendarContract.Events.CONTENT_URI,
+                arrayOf(android.provider.CalendarContract.Events._ID),
+                "${android.provider.CalendarContract.Events.TITLE} = ? AND ${android.provider.CalendarContract.Events.DTSTART} = ?",
+                arrayOf(title, startMillis.toString()),
+                null
+            )
+            val alreadyExists = existsCursor?.use { it.count > 0 } ?: false
+            if (alreadyExists) {
+                toast("الموعد مضاف مسبقًا بالتقويم")
                 return
             }
 

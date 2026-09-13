@@ -473,13 +473,15 @@ object DashboardHtmlBuilder {
 
     private fun SCRIPT(): String {
         val calLbl = t("أضف للتقويم", "Add to Calendar")
+        val calLblMid = t("أضف امتحان المنتصف للتقويم", "Add Midterm to Calendar")
+        val calLblFin = t("أضف الامتحان النهائي للتقويم", "Add Final to Calendar")
         val lSection = t("الشعبة", "Section"); val lTeacher = t("المدرس", "Instructor")
         val lMidGrade = t("علامة المنتصف", "Midterm Grade"); val lWork = t("أعمال أخرى", "Other Work")
         val lFinGrade = t("علامة الامتحان النهائي", "Final Exam Grade"); val lTotal = t("المجموع", "Total")
         val lMidExam = t("امتحان المنتصف", "Midterm Exam"); val lFinExam = t("الامتحان النهائي", "Final Exam")
         val lCode = t("رمز المقرر", "Course Code")
         return """
-        <script>var CALLBL="$calLbl";</script>
+        <script>var CALLBL="$calLbl",CALLBL_MID="$calLblMid",CALLBL_FIN="$calLblFin";</script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
         <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
@@ -524,8 +526,8 @@ object DashboardHtmlBuilder {
           document.getElementById('mme').textContent=c.md?(c.md+' — '+c.mt+(c.mr?' — '+c.mr:'')):'-';
           document.getElementById('mfe').textContent=c.fd?(c.fd+' — '+c.ft+(c.fr?' — '+c.fr:'')):'-';
           var btnsHtml='';
-          if(c.md) btnsHtml+="<span class='calBtn' onclick=\"addExamToCal('"+c.n+" - Midterm','"+c.md+"','"+c.mtr+"','"+c.mr+"')\">"+CALLBL+"</span> ";
-          if(c.fd) btnsHtml+="<span class='calBtn' onclick=\"addExamToCal('"+c.n+" - Final','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+CALLBL+"</span>";
+          if(c.md) btnsHtml+="<span class='calBtn' onclick=\"addExamToCal('"+c.n+" - Midterm','"+c.md+"','"+c.mtr+"','"+c.mr+"')\">"+CALLBL_MID+"</span> ";
+          if(c.fd) btnsHtml+="<span class='calBtn' onclick=\"addExamToCal('"+c.n+" - Final','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+CALLBL_FIN+"</span>";
           document.getElementById('mCalBtns').innerHTML=btnsHtml;
           document.getElementById('ov').classList.add('show');
         }
