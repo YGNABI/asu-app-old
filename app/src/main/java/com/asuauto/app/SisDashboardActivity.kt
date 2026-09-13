@@ -133,6 +133,26 @@ class SisDashboardActivity : AppCompatActivity() {
             }
             return JSON.stringify(rows);
         }
+        function scrapeMoodleCourses() {
+            var out = [];
+            var cards = document.querySelectorAll('[data-region="course-content"]');
+            for (var i=0;i<cards.length;i++){
+                var card = cards[i];
+                var id = card.getAttribute('data-course-id');
+                if (!id) continue;
+                var nameEl = card.querySelector('a.coursename');
+                var name = nameEl ? nameEl.textContent.trim() : '';
+                if (!name) {
+                    var sr = card.querySelector('.sr-only');
+                    name = sr ? sr.textContent.trim() : '';
+                }
+                out.push({ id: id, name: name });
+            }
+            return JSON.stringify(out);
+        }
+        function stillOnMoodleLogin() {
+            return document.querySelector('input[name="password"]') ? true : false;
+        }
         function scrapeTranscript() {
             var tbl = document.getElementById('report_table_R3755411640631850167');
             if (!tbl) return '[]';
@@ -172,7 +192,7 @@ class SisDashboardActivity : AppCompatActivity() {
                 phase = "done"
                 buildAndShowDashboard()
             }
-        }, 45000)
+        }, 60000)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -296,9 +316,39 @@ class SisDashboardActivity : AppCompatActivity() {
                         phase = "accountPage2"
                         view.postDelayed({
                             view.evaluateJavascript("AndroidBridge.tbl('account2', scrapeTableByLabel('تفاصيل كشف الحساب '));", null)
-                            phase = "done"
-                            view.postDelayed({ buildAndShowDashboard() }, 300)
+                            setStatus("جاري ربط المواد بموقع التعليم الالكتروني...")
+                            phase = "moodleLogin"
+                            view.loadUrl("https://elearning.asu.edu.bh/login/index.php")
                         }, 1200)
+                    }
+                    "moodleLogin" -> {
+                        val moodleUser = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("username", "") ?: ""
+                        val moodlePass = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("password", "") ?: ""
+                        view.evaluateJavascript("stillOnMoodleLogin();") { stillOnLogin ->
+                            if (stillOnLogin == "true" && moodleUser.isNotBlank() && moodlePass.isNotBlank()) {
+                                val js = """
+                                    (function() {
+                                        var u = document.querySelector('input[name="username"]');
+                                        var p = document.querySelector('input[name="password"]');
+                                        if (u && p) {
+                                            u.value = "$moodleUser"; p.value = "$moodlePass";
+                                            u.dispatchEvent(new Event('input',{bubbles:true}));
+                                            p.dispatchEvent(new Event('input',{bubbles:true}));
+                                            var b = document.querySelector('#loginbtn');
+                                            if (b) setTimeout(function(){ b.click(); }, 400);
+                                        }
+                                    })();
+                                """.trimIndent()
+                                view.evaluateJavascript(js, null)
+                            }
+                            phase = "moodleCourses"
+                            view.postDelayed({ view.loadUrl("https://elearning.asu.edu.bh/my/") }, 1500)
+                        }
+                    }
+                    "moodleCourses" -> {
+                        view.evaluateJavascript("AndroidBridge.tbl('moodleCourses', scrapeMoodleCourses());", null)
+                        phase = "done"
+                        view.postDelayed({ buildAndShowDashboard() }, 300)
                     }
                 }
             }
@@ -447,6 +497,20 @@ class SisDashboardActivity : AppCompatActivity() {
         for (i in planLinks.indices) details[i] = toList(rawTables["planDetail_$i"])
         DataStore.planDetails = details
 
+        val moodleCourses = mutableListOf<CourseSummary>()
+        rawTables["moodleCourses"]?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val id = obj.optString("id")
+                val name = obj.optString("name")
+                if (id.isNotBlank() && name.isNotBlank()) {
+                    moodleCourses.add(CourseSummary(id, name, ""))
+                }
+            }
+        }
+        DataStore.moodleCourses = moodleCourses
+        DataStore.moodleCourseMap = MoodleCourseMatcher.match(DataStore.registration, moodleCourses)
+
         DashboardHtmlBuilder.LANG = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).putInt("version", CACHE_VERSION).apply()
@@ -550,6 +614,9 @@ object DataStore {
     var planDetails: Map<Int, List<List<String>>> = emptyMap()
     var planNames: List<String> = emptyList()
     val planStats = mutableListOf<List<String>>()
+    var moodleCourses: List<CourseSummary> = emptyList()
+    // normalized SIS course code -> Moodle course id
+    var moodleCourseMap: Map<String, String> = emptyMap()
 
     fun f(key: String) = fields[key]?.trim()?.takeIf { it != "-" && it.isNotEmpty() } ?: ""
 
@@ -563,5 +630,7 @@ object DataStore {
         account = emptyList()
         planDetails = emptyMap()
         planNames = emptyList()
+        moodleCourses = emptyList()
+        moodleCourseMap = emptyMap()
     }
 }
