@@ -66,6 +66,7 @@ class MainActivity : AppCompatActivity() {
         langToggle.setOnClickListener {
             val cur = prefs.getString("lang", "ar") ?: "ar"
             prefs.edit().putString("lang", if (cur == "ar") "en" else "ar").apply()
+            getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).edit().clear().apply()
             applyLangText()
         }
 
