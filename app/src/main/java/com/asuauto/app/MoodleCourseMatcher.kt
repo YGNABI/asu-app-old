@@ -72,7 +72,7 @@ object MoodleCourseMatcher {
         var bestScore = 0
         for ((candidateName, course) in candidates) {
             val score = when {
-                candidateName.contains(target) || target.contains(candidateName) ->
+                candidateName.indexOf(target) >= 0 || target.indexOf(candidateName) >= 0 ->
                     minOf(candidateName.length, target.length)
                 else -> longestCommonSubstring(target, candidateName)
             }
