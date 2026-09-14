@@ -30,7 +30,14 @@ object CourseMaterialsHtmlBuilder {
     private fun t(ar: String, en: String) = if (LANG == "en") en else ar
     private fun esc(s: String) = s.replace("\"", "&quot;").replace("<", "&lt;")
 
-    fun build(courseName: String, weeks: List<MoodleWeek>): String {
+    private fun sanitizeFileName(name: String) = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+
+    private fun expectedFileName(name: String, type: String): String {
+        val ext = type.trim().lowercase()
+        return sanitizeFileName(name) + if (ext.isNotBlank() && !name.lowercase().endsWith(".$ext")) ".$ext" else ""
+    }
+
+    fun build(courseName: String, weeks: List<MoodleWeek>, downloadedNames: Set<String> = emptySet()): String {
         val dir = if (LANG == "en") "ltr" else "rtl"
         val sb = StringBuilder()
         sb.append(
@@ -47,7 +54,9 @@ object CourseMaterialsHtmlBuilder {
             .row{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #f0f0f0;cursor:pointer}
             .row:last-child{border-bottom:none}
             .rowTitle{font-size:13px}
-            .pill{color:#fff;font-size:10px;padding:2px 9px;border-radius:10px;background:#3498db;flex-shrink:0;margin-inline-start:8px}
+            .rowMeta{display:flex;align-items:center;gap:6px;flex-shrink:0;margin-inline-start:8px}
+            .pill{color:#fff;font-size:10px;padding:2px 9px;border-radius:10px;background:#3498db}
+            .savedTick{color:#1D9E75;font-size:14px}
             .empty{text-align:center;color:#aaa;padding:40px 10px}
             </style></head><body>
             <div class="header">${esc(courseName)}</div>
@@ -56,7 +65,7 @@ object CourseMaterialsHtmlBuilder {
         )
 
         if (weeks.isEmpty()) {
-            sb.append("<div class='empty'>${t("ما فيه مواد تعليمية مرفوعة لهذي المادة", "No course materials uploaded for this course")}</div>")
+            sb.append("<div class='empty'>${t("لا توجد مواد تعليمية مرفوعة لهذه المادة", "No course materials uploaded for this course")}</div>")
         } else {
             for (week in weeks) {
                 sb.append("<div class='weekTitle'>${esc(week.week)}</div>")
@@ -64,10 +73,13 @@ object CourseMaterialsHtmlBuilder {
                     if (cat.label.isNotBlank()) sb.append("<div class='catTitle'>${esc(cat.label)}</div>")
                     sb.append("<div class='list'>")
                     for (f in cat.files) {
+                        val saved = expectedFileName(f.name, f.type) in downloadedNames
                         sb.append("<div class='row' onclick=\"downloadFile('${esc(f.url)}','${esc(f.name)}','${esc(f.type)}')\">")
                         sb.append("<div class='rowTitle'>${esc(f.name)}</div>")
+                        sb.append("<div class='rowMeta'>")
+                        if (saved) sb.append("<span class='savedTick' title='${t("محفوظ على الجهاز", "Saved on device")}'>&#10004;</span>")
                         if (f.type.isNotBlank()) sb.append("<span class='pill'>${esc(f.type)}</span>")
-                        sb.append("</div>")
+                        sb.append("</div></div>")
                     }
                     sb.append("</div>")
                 }
