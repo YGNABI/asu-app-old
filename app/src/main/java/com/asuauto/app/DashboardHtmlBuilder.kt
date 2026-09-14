@@ -52,6 +52,39 @@ object DashboardHtmlBuilder {
         else -> Pair("#EAF3DE", "#3B6D11")
     }
 
+    /**
+     * Gold if cumulative GPA > 92, silver if not but the most recent NON-summer
+     * semester's "Average" > 85. Summer terms are skipped when picking which
+     * semester's Average to check (per the user: summer doesn't count toward
+     * honor-roll eligibility) — but the cumulative GPA field itself is used
+     * as-is since it's a running total that already includes summer naturally.
+     * Returns null when neither threshold is met, so callers fall back to the
+     * existing warning-based color.
+     */
+    private fun honorRollColor(): Pair<String, String>? {
+        val d = DataStore
+        val cumGpa = d.f("studentGpa").toDoubleOrNull()
+
+        var lastNonSummerTerm: String? = null
+        for (row in d.transcript) {
+            if (row.size >= 2 && row[0] == "__TERM__") {
+                val text = row[1]
+                if (!text.contains("Summer", ignoreCase = true) && !text.contains("صيفي")) {
+                    lastNonSummerTerm = text
+                }
+            }
+        }
+        val semesterAvg = lastNonSummerTerm?.let {
+            Regex("Average\\s+([\\d.]+)").find(it)?.groupValues?.get(1)?.toDoubleOrNull()
+        }
+
+        return when {
+            cumGpa != null && cumGpa > 92.0 -> "#D4AF37" to "#ffffff"
+            semesterAvg != null && semesterAvg > 85.0 -> "#BFC1C2" to "#3a3a3a"
+            else -> null
+        }
+    }
+
     class Course {
         var code = ""
         var nameAr = ""
@@ -62,6 +95,7 @@ object DashboardHtmlBuilder {
         var from = ""
         var rawFrom = ""
         var to = ""
+        var rawTo = ""
         var room = ""
         var instructor = ""
         var midDate = ""
@@ -103,7 +137,7 @@ object DashboardHtmlBuilder {
                 x.code = code
                 x.nameEn = c(ni); x.section = c(si)
                 x.rawDays = c(di); x.rawFrom = c(fi)
-                x.days = daysAr(c(di)); x.from = to12h(c(fi)); x.to = to12h(c(ti))
+                x.days = daysAr(c(di)); x.from = to12h(c(fi)); x.to = to12h(c(ti)); x.rawTo = c(ti)
                 x.room = c(ri); x.instructor = c(li)
                 x.midDate = c(mdi); x.midTime = to12h(c(mti)); x.rawMidTime = c(mti); x.midRoom = c(mri)
                 x.finDate = c(fdi); x.finTime = to12h(c(fti)); x.rawFinTime = c(fti); x.finRoom = c(fri)
@@ -162,17 +196,17 @@ object DashboardHtmlBuilder {
     private fun home(): String {
         val d = DataStore
         val name = d.f("studentName").ifBlank { "الطالب" }
-        val (bg, fg) = warnColor(d.f("studentWarning"))
+        val warning = d.f("studentWarning")
+        val (bg, fg) = if (warning.isBlank()) (honorRollColor() ?: warnColor(warning)) else warnColor(warning)
         val initials = name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }
 
         val sb = StringBuilder()
-        sb.append(debugBoxSection())
         sb.append("<div class='card'>")
         sb.append("<div style='display:flex;align-items:center;gap:12px'>")
         sb.append("<div class='avatar' style='background:$bg;color:$fg'>${esc(initials)}</div>")
         sb.append("<div><div class='big'>${esc(name)}</div><div class='muted'>${esc(d.f("studentCollege"))}</div></div></div>")
         sb.append("<div class='grid'>")
-        sb.append(kvBox(t("المعدل التراكمي", "GPA"), d.f("studentGpa")))
+        sb.append(kvBox(t("المعدل التراكمي", "GPA"), d.f("studentGpa"), "toggleGpaChart()"))
         sb.append(kvBox(t("متوقع تخرجه", "Expected to graduate"), d.f("gradExpected")))
         sb.append(kvBox(t("المرشد الأكاديمي", "Academic Advisor"), d.f("advisor")))
         sb.append(kvBox(t("الوضع الأكاديمي", "Academic Status"), d.f("academicStatus")))
@@ -187,10 +221,11 @@ object DashboardHtmlBuilder {
             sb.append("</div>")
         }
         sb.append("</div>")
+        sb.append(gpaChartOverlay(DataStore.gpaHistory))
 
         val cs = courses()
         if (cs.isEmpty()) {
-            sb.append("<div class='empty'>${t("ما فيه مواد مسجلة", "No registered courses")}</div>")
+            sb.append("<div class='empty'>${t("لا توجد مواد مسجلة", "No registered courses")}</div>")
             return sb.toString()
         }
         val dayOrder = mapOf('U' to 0, 'M' to 1, 'T' to 2, 'W' to 3, 'H' to 4, 'F' to 5, 'S' to 6)
@@ -212,12 +247,19 @@ object DashboardHtmlBuilder {
                 val warn = if (black) "<span style='margin-left:4px;color:#E24B4A'>&#9888;</span>" else ""
                 "$warn<div class='circle' style='background:$b2;color:$f2'>${c.att!!.toInt()}%</div>"
             } else "<div class='circle' style='background:#eee;color:#999'>-</div>"
-            sb.append("<div class='row' onclick=\"openModal('$k')\">")
+            sb.append("<div class='row' data-code='$k' onclick=\"openModal('$k')\">")
             sb.append("<div><div class='rowTitle'>${esc(disp)} <span class='codeTag'>${esc(c.code)}</span></div>")
             sb.append("<div class='rowSub'>${esc(c.days)} — ${esc(c.from)} - ${esc(c.to)} — ${esc(c.room)}</div></div>")
             sb.append("<div style='display:flex;align-items:center'>$circle</div></div>")
         }
         sb.append("</div>")
+
+        sb.append("<div id='activeBanner' class='activeBanner'>")
+        sb.append("<div class='activeBannerHandle'></div>")
+        sb.append("<div class='activeBannerText'>")
+        sb.append("<div class='activeBannerCourse' id='activeBannerCourse'></div>")
+        sb.append("<div class='activeBannerRoom' id='activeBannerRoom'></div>")
+        sb.append("</div></div>")
 
         sb.append("<script>var C={")
         for ((k, c) in cs) {
@@ -227,7 +269,7 @@ object DashboardHtmlBuilder {
             sb.append("mg:\"${esc(c.midGrade)}\",wg:\"${esc(c.workGrade)}\",fg:\"${esc(c.finGrade)}\",tg:\"${esc(c.total)}\",gc:\"${esc(c.gradeCase)}\",")
             sb.append("md:\"${esc(c.midDate)}\",mt:\"${esc(c.midTime)}\",mtr:\"${esc(c.rawMidTime)}\",mr:\"${esc(c.midRoom)}\",")
             sb.append("fd:\"${esc(c.finDate)}\",ft:\"${esc(c.finTime)}\",ftr:\"${esc(c.rawFinTime)}\",fr:\"${esc(c.finRoom)}\",")
-            sb.append("mid:\"${esc(moodleId)}\"},")
+            sb.append("mid:\"${esc(moodleId)}\",rd:\"${esc(c.rawDays)}\",rf:\"${esc(c.rawFrom)}\",rt:\"${esc(c.rawTo)}\",rm:\"${esc(c.room)}\"},")
         }
         sb.append("};</script>")
         return sb.toString()
@@ -240,6 +282,78 @@ object DashboardHtmlBuilder {
      * Stays in the app — this is how "something's missing/wrong" gets
      * diagnosed going forward instead of screenshotting a specific screen.
      */
+    /**
+     * Builds the GPA-trend overlay (hidden by default, toggled via
+     * toggleGpaChart()) from the locally-accumulated history. A smooth
+     * Catmull-Rom curve, colored with a gradient that blends green where the
+     * GPA rose and red where it dropped between consecutive points — matching
+     * app colors, no hard color switch mid-line.
+     */
+    private fun gpaChartOverlay(history: List<Pair<String, Double>>): String {
+        val sb = StringBuilder()
+        sb.append("<div id='gpaOv' class='ov' onclick=\"if(event.target===this) document.getElementById('gpaOv').classList.remove('show')\">")
+        sb.append("<div class='modal'>")
+        sb.append("<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px'>")
+        sb.append("<div class='big'>${t("تطور المعدل التراكمي", "GPA Trend")}</div>")
+        sb.append("<span onclick=\"document.getElementById('gpaOv').classList.remove('show')\" style='cursor:pointer;font-size:20px;line-height:1'>&times;</span>")
+        sb.append("</div>")
+
+        if (history.size < 2) {
+            sb.append("<div class='empty' style='padding:20px 4px'>${t("سنبدأ بتتبع تطور معدلك التراكمي من الفتحة القادمة للوحة", "We'll start tracking your GPA trend from the next time you open the dashboard")}</div>")
+        } else {
+            val w = 300.0; val h = 150.0; val padL = 30.0; val padR = 8.0; val padT = 10.0; val padB = 20.0
+            val values = history.map { it.second }
+            var minV = values.min() - 1.0
+            var maxV = values.max() + 1.0
+            if (maxV - minV < 2.0) { minV -= 1.0; maxV += 1.0 }
+            minV = minV.coerceAtLeast(0.0)
+            maxV = maxV.coerceAtMost(100.0)
+            val n = history.size
+            val span = (maxV - minV).let { if (it == 0.0) 1.0 else it }
+            fun xAt(i: Int) = padL + (w - padL - padR) * i / (n - 1)
+            fun yAt(v: Double) = padT + (h - padT - padB) * (1 - (v - minV) / span)
+
+            val pts = history.mapIndexed { i, pair -> xAt(i) to yAt(pair.second) }
+            val path = StringBuilder("M${pts[0].first},${pts[0].second} ")
+            for (i in 0 until pts.size - 1) {
+                val p0 = pts.getOrElse(i - 1) { pts[i] }
+                val p1 = pts[i]
+                val p2 = pts[i + 1]
+                val p3 = pts.getOrElse(i + 2) { pts[i + 1] }
+                val c1x = p1.first + (p2.first - p0.first) / 6
+                val c1y = p1.second + (p2.second - p0.second) / 6
+                val c2x = p2.first - (p3.first - p1.first) / 6
+                val c2y = p2.second - (p3.second - p1.second) / 6
+                path.append("C$c1x,$c1y $c2x,$c2y ${p2.first},${p2.second} ")
+            }
+
+            sb.append("<svg viewBox='0 0 $w $h' width='100%' height='150' preserveAspectRatio='xMidYMid meet'>")
+            for (gi in 0..2) {
+                val gy = padT + (h - padT - padB) * gi / 2
+                sb.append("<line x1='$padL' y1='$gy' x2='${w - padR}' y2='$gy' stroke='#eee' stroke-width='1'/>")
+            }
+            sb.append("<defs><linearGradient id='gpaGrad' x1='0' y1='0' x2='1' y2='0'>")
+            for (i in history.indices) {
+                val offset = if (n == 1) 0 else i * 100 / (n - 1)
+                val color = if (i == 0) "#378ADD" else if (history[i].second >= history[i - 1].second) "#1D9E75" else "#E24B4A"
+                sb.append("<stop offset='$offset%' stop-color='$color'/>")
+            }
+            sb.append("</linearGradient></defs>")
+            sb.append("<path d='$path' fill='none' stroke='url(#gpaGrad)' stroke-width='3' stroke-linecap='round'/>")
+            pts.forEachIndexed { i, p ->
+                val color = if (i == 0) "#378ADD" else if (history[i].second >= history[i - 1].second) "#1D9E75" else "#E24B4A"
+                sb.append("<circle cx='${p.first}' cy='${p.second}' r='3' fill='$color'/>")
+            }
+            val labelIdxs = if (n <= 4) history.indices.toList() else listOf(0, n / 2, n - 1)
+            for (i in labelIdxs) {
+                sb.append("<text x='${pts[i].first}' y='${h - 4}' font-size='8' fill='#999' text-anchor='middle'>${esc(history[i].first.substring(5))}</text>")
+            }
+            sb.append("</svg>")
+        }
+        sb.append("</div></div>")
+        return sb.toString()
+    }
+
     private fun debugBoxSection(): String {
         val sb = StringBuilder()
         val issues = DebugLog.hasIssues()
@@ -270,8 +384,10 @@ object DashboardHtmlBuilder {
         return sb.toString()
     }
 
-    private fun kvBox(label: String, value: String) =
-        "<div><div class='lbl'>${esc(label)}</div><div class='val'>${esc(value.ifBlank { "-" })}</div></div>"
+    private fun kvBox(label: String, value: String, onclick: String? = null): String {
+        val clickAttr = if (onclick != null) " onclick=\"$onclick\" style='cursor:pointer'" else ""
+        return "<div$clickAttr><div class='lbl'>${esc(label)}</div><div class='val'>${esc(value.ifBlank { "-" })}</div></div>"
+    }
 
     private fun hoursToCourses(hoursStr: String): Int {
         val h = hoursStr.toDoubleOrNull() ?: return 0
@@ -291,7 +407,7 @@ object DashboardHtmlBuilder {
 
     private fun plan(): String {
         val details = DataStore.planDetails
-        if (details.isEmpty()) return "<div class='empty'>${t("ما قدرنا نجيب الخطة الدراسية", "Couldn't load the study plan")}</div>"
+        if (details.isEmpty()) return "<div class='empty'>${t("تعذّر تحميل الخطة الدراسية", "Couldn't load the study plan")}</div>"
         val current = courses().keys
         val sb = StringBuilder()
 
@@ -339,7 +455,7 @@ object DashboardHtmlBuilder {
             sb.append("<div class='p-reg'>"); itemsReg.forEach { sb.append(it) }; sb.append("</div>")
             sb.append("<div class='p-all' style='display:none'>"); itemsAll.forEach { sb.append(it) }; sb.append("</div>")
         }
-        if (sb.length < 300) return "<div class='empty'>${t("ما فيه مواد مدروسة", "No studied courses yet")}</div>"
+        if (sb.length < 300) return "<div class='empty'>${t("لا توجد مواد مدروسة", "No studied courses yet")}</div>"
         return sb.toString()
     }
 
@@ -364,7 +480,7 @@ object DashboardHtmlBuilder {
         sb.append("</div></div>")
 
         if (rows.isEmpty()) {
-            sb.append("<div class='empty'>${t("ما قدرنا نجيب كشف الدرجات", "Couldn't load the grade report")}</div>")
+            sb.append("<div class='empty'>${t("تعذّر تحميل كشف الدرجات", "Couldn't load the grade report")}</div>")
             return sb.toString()
         }
 
@@ -427,7 +543,7 @@ object DashboardHtmlBuilder {
 
         val rows = d.account
         if (rows.size < 2) {
-            sb.append("<div class='empty'>${t("ما قدرنا نجيب كشف الحساب", "Couldn't load the account statement")}</div>")
+            sb.append("<div class='empty'>${t("تعذّر تحميل كشف الحساب", "Couldn't load the account statement")}</div>")
             return sb.toString()
         }
         val h = rows[0]
@@ -449,7 +565,7 @@ object DashboardHtmlBuilder {
             sb.append("<div><div class='rowTitle' style='font-size:13px'>${esc(label)}</div><div class='rowSub'>${esc(c(di))}</div></div>")
             sb.append("<div style='text-align:left'><span class='pill' style='background:$color'>${esc(tag)}</span><div style='font-size:13px;margin-top:3px'>${esc(amount)}</div></div></div>")
         }
-        sb.append("<div class='empty' id='accEmpty' style='display:none'>${t("ما فيه حركات بهذه الفترة", "No transactions in this period")}</div>")
+        sb.append("<div class='empty' id='accEmpty' style='display:none'>${t("لا توجد حركات خلال هذه الفترة", "No transactions in this period")}</div>")
         sb.append("</div>")
         return sb.toString()
     }
@@ -500,6 +616,14 @@ object DashboardHtmlBuilder {
         .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
         .ov.show{display:flex}
         .modal{background:#fff;border-radius:14px;padding:16px;width:86%;max-width:340px}
+        .row.rowActive{background:#EAF3DE;border-right:4px solid #3B6D11}
+        .row.rowActive .rowTitle{color:#2c5b0e}
+        .activeBanner{position:fixed;left:12px;right:12px;bottom:14px;background:#2c3e50;color:#fff;border-radius:14px;padding:12px 16px;display:none;align-items:center;justify-content:space-between;z-index:90;box-shadow:0 4px 14px rgba(0,0,0,.25);touch-action:none}
+        .activeBanner.show{display:flex}
+        .activeBannerHandle{width:34px;height:4px;background:rgba(255,255,255,.4);border-radius:3px;position:absolute;top:6px;left:50%;transform:translateX(-50%)}
+        .activeBannerText{width:100%;padding-top:6px}
+        .activeBannerCourse{font-size:12px;color:#cbd3da}
+        .activeBannerRoom{font-size:18px;font-weight:bold;margin-top:2px}
         </style></head><body>
         <div class="tabs">
         <div class="tab active" onclick="sp(this,'home')">${t("الرئيسية", "Home")}</div>
@@ -523,7 +647,7 @@ object DashboardHtmlBuilder {
         val lMidExam = t("امتحان المنتصف", "Midterm Exam"); val lFinExam = t("الامتحان النهائي", "Final Exam")
         val lCode = t("رمز المقرر", "Course Code")
         return """
-        <script>var CALLBL="$calLbl",CALLBL_MID="$calLblMid",CALLBL_FIN="$calLblFin",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl";</script>
+        <script>var CALLBL="$calLbl",CALLBL_MID="$calLblMid",CALLBL_FIN="$calLblFin",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",ROOMLBL="${t("القاعة", "Room")}";</script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
         <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
@@ -575,7 +699,7 @@ object DashboardHtmlBuilder {
           document.getElementById('mCalBtns').innerHTML=btnsHtml;
           var matHtml = c.mid ? "<span class='calBtn' onclick=\"openCourseMaterials('"+c.mid+"','"+c.n+"')\">"+MATERIALSLBL+"</span>" : '';
           document.getElementById('mMaterialsBtn').innerHTML = matHtml;
-          var assHtml = c.mid ? "<span class='calBtn' onclick=\"openCourseAssessments('"+c.mid+"','"+c.n+"')\">"+ASSESSMENTSLBL+"</span>" : '';
+          var assHtml = c.mid ? "<span class='calBtn' onclick=\"openCourseAssessments('"+c.mid+"','"+c.n+"','"+c.md+"','"+c.mtr+"','"+c.mr+"','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+ASSESSMENTSLBL+"</span>" : '';
           document.getElementById('mAssessmentsBtn').innerHTML = assHtml;
           document.getElementById('ov').classList.add('show');
         }
@@ -609,8 +733,8 @@ object DashboardHtmlBuilder {
         function openCourseMaterials(moodleId,courseName){
           if(typeof AndroidBridge!=='undefined') AndroidBridge.openCourseMaterials(moodleId,courseName);
         }
-        function openCourseAssessments(moodleId,courseName){
-          if(typeof AndroidBridge!=='undefined') AndroidBridge.openCourseAssessments(moodleId,courseName);
+        function openCourseAssessments(moodleId,courseName,midDate,midTime,midRoom,finDate,finTime,finRoom){
+          if(typeof AndroidBridge!=='undefined') AndroidBridge.openCourseAssessments(moodleId,courseName,midDate,midTime,midRoom,finDate,finTime,finRoom);
         }
         function fg(el,m){
           el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
@@ -639,6 +763,75 @@ object DashboardHtmlBuilder {
           var c=document.querySelector('#account .chip');
           if(c)fa(c,'recent');
         })();
+
+        function toggleGpaChart(){
+          var ov=document.getElementById('gpaOv');
+          if(ov) ov.classList.add('show');
+        }
+
+        function toMinutesOfDay(t){
+          var p=(t||'').split(':');
+          return (parseInt(p[0])||0)*60+(parseInt(p[1])||0);
+        }
+
+        var lastActiveCode=null, dismissedCode=null;
+        function checkCurrentClass(){
+          if(typeof C==='undefined') return;
+          var dayMap=['U','M','T','W','H','F','S'];
+          var now=new Date();
+          var todayLetter=dayMap[now.getDay()];
+          var nowMin=now.getHours()*60+now.getMinutes();
+          var activeCode=null, activeCourse=null;
+          for(var k in C){
+            var c=C[k];
+            if(!c.rd || c.rd.indexOf(todayLetter)===-1) continue;
+            if(!c.rf || !c.rt) continue;
+            var fromMin=toMinutesOfDay(c.rf), toMin=toMinutesOfDay(c.rt);
+            if(nowMin>=fromMin && nowMin<=toMin){ activeCode=k; activeCourse=c; break; }
+          }
+          document.querySelectorAll('.row.rowActive').forEach(function(r){r.classList.remove('rowActive')});
+          if(activeCode){
+            var row=document.querySelector('.row[data-code="'+activeCode+'"]');
+            if(row) row.classList.add('rowActive');
+            var banner=document.getElementById('activeBanner');
+            if(banner && activeCode!==dismissedCode){
+              document.getElementById('activeBannerCourse').textContent=activeCourse.n;
+              document.getElementById('activeBannerRoom').textContent=activeCourse.rm ? (ROOMLBL+': '+activeCourse.rm) : '';
+              banner.style.transform='';
+              banner.classList.add('show');
+            }
+          } else {
+            var banner2=document.getElementById('activeBanner');
+            if(banner2) banner2.classList.remove('show');
+            dismissedCode=null;
+          }
+          lastActiveCode=activeCode;
+        }
+
+        (function(){
+          var banner=document.getElementById('activeBanner');
+          if(!banner) return;
+          var startY=null, currentY=0;
+          banner.addEventListener('touchstart',function(e){
+            startY=e.touches[0].clientY; currentY=0;
+          },{passive:true});
+          banner.addEventListener('touchmove',function(e){
+            if(startY===null) return;
+            var dy=e.touches[0].clientY-startY;
+            if(dy>0){ currentY=dy; banner.style.transform='translateY('+dy+'px)'; }
+          },{passive:true});
+          banner.addEventListener('touchend',function(){
+            if(currentY>40){
+              banner.classList.remove('show');
+              dismissedCode=lastActiveCode;
+            }
+            banner.style.transform='';
+            startY=null; currentY=0;
+          });
+        })();
+
+        checkCurrentClass();
+        setInterval(checkCurrentClass, 30000);
         </script></body></html>
     """.trimIndent()
     }

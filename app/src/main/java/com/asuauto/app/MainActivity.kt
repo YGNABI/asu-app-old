@@ -106,7 +106,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         logoutTop.setOnClickListener {
-            prefs.edit().remove("username").remove("password").remove("biometric_enabled").apply()
+            prefs.edit().remove("username").remove("password").remove("biometric_enabled").remove("gpa_history").apply()
+            android.webkit.CookieManager.getInstance().removeAllCookies(null)
+            android.webkit.CookieManager.getInstance().flush()
+            getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).edit().clear().apply()
             usernameInput.setText("")
             passwordInput.setText("")
             biometricCheckbox.isChecked = false

@@ -29,7 +29,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 12
+    private val CACHE_VERSION = 13
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -179,6 +179,7 @@ class SisDashboardActivity : AppCompatActivity() {
         planLinks.clear()
         planNames.clear()
         rawTables.clear()
+        accountPageIndex = 0
         DataStore.reset()
         DebugLog.reset()
 
@@ -312,35 +313,14 @@ class SisDashboardActivity : AppCompatActivity() {
                     }
                     "account" -> {
                         view.evaluateJavascript("AndroidBridge.txt('balance', getById('P7_BALANCE'));", null)
-                        view.evaluateJavascript("AndroidBridge.tbl('account', scrapeTableByLabel('تفاصيل كشف الحساب '));", null)
-                        view.evaluateJavascript("clickAccountNext();", null)
-                        phase = "accountPage2"
-                        view.postDelayed({
-                            view.evaluateJavascript("AndroidBridge.tbl('account2', scrapeTableByLabel('تفاصيل كشف الحساب '));", null)
-                            setStatus("جاري جلب مواد التعليم الالكتروني...")
-                            // No login attempt here on purpose. MainActivity now logs into
-                            // Moodle (once) right before it opens this activity — see
-                            // MainActivity.btnSisDashboard. Doing our own separate login here
-                            // was what caused repeated failures: Moodle throttles/rejects
-                            // logins after a few rapid automated attempts from the same
-                            // account, so a retry loop here actually made things worse, not
-                            // better. If we land on a login page anyway (session somehow
-                            // missing/expired), we report it clearly instead of retrying.
-                            // Use the Moodle SITE HOME page, not /my/ (Dashboard). The real
-                            // captured HTML this scraper was written against came from the
-                            // site home page (body id="page-site-index", title "Home | asulms"),
-                            // where the "My courses" cards are present in the initial HTML.
-                            // /my/ renders its "Course overview" cards via JavaScript after
-                            // load, so scraping it right after onPageFinished found 0 cards
-                            // every time — that, not the login flow, was the root cause.
-                            phase = "moodleCourses"
-                            view.loadUrl("https://elearning.asu.edu.bh/?redirect=0")
-                        }, 1200)
+                        setStatus("جاري جلب كشف الحساب...")
+                        accountPageIndex = 1
+                        scrapeAccountPageAndContinue(view)
                     }
                     "moodleCourses" -> {
                         view.evaluateJavascript("stillOnMoodleLogin();") { stillOnLogin ->
                             if (stillOnLogin == "true") {
-                                DebugLog.error("ما فيه جلسة Moodle — رجع للصفحة الرئيسية واضغط \"لوحة SIS الذكية\" مرة ثانية (لازم يسجل دخول Moodle قبل ما يفتح اللوحة)")
+                                DebugLog.error("لا توجد جلسة Moodle سارية — يرجى العودة إلى الصفحة الرئيسية والضغط على \"لوحة SIS الذكية\" مرة أخرى (يلزم تسجيل الدخول إلى Moodle قبل فتح اللوحة)")
                                 phase = "done"
                                 view.postDelayed({ buildAndShowDashboard() }, 300)
                                 return@evaluateJavascript
@@ -364,7 +344,7 @@ class SisDashboardActivity : AppCompatActivity() {
                                     val cardCount = diag.optInt("cardCount", -1)
                                     if (cardCount <= 0) {
                                         DebugLog.error(
-                                            "الصفحة الرئيسية لـ Moodle ما فيها بطاقات مواد — الرابط الفعلي: ${diag.optString("url")} | " +
+                                            "لا تحتوي الصفحة الرئيسية لـ Moodle على بطاقات مواد — الرابط الفعلي: ${diag.optString("url")} | " +
                                                 "العنوان: ${diag.optString("title")} | مقتطف: ${diag.optString("bodySnippet")}"
                                         )
                                     }
@@ -390,6 +370,87 @@ class SisDashboardActivity : AppCompatActivity() {
             resultWebView.loadDataWithBaseURL(null, cached, "text/html", "utf-8", null)
         } else {
             startScraping()
+        }
+    }
+
+    private var accountPageIndex = 0
+
+    /**
+     * The account-statement report paginates via AJAX (same URL, a "next" link
+     * that updates the table in place) rather than a real page navigation, so
+     * onPageFinished never fires again for later pages — that's why this loops
+     * itself with postDelayed instead of going through the phase/onPageFinished
+     * dispatch like the rest of the scraper. Previously this only ever fetched
+     * page 2 and stopped, which is why older transactions (e.g. "last 3 months"
+     * sitting on page 3+) were silently missing. Now it keeps clicking "next"
+     * and scraping until the button itself is gone, however many pages that is.
+     */
+    private fun scrapeAccountPageAndContinue(view: WebView) {
+        view.evaluateJavascript("AndroidBridge.tbl('accountPage$accountPageIndex', scrapeTableByLabel('تفاصيل كشف الحساب '));", null)
+        view.evaluateJavascript("clickAccountNext();") { hasNext ->
+            if (hasNext == "true" && accountPageIndex < 30) {
+                accountPageIndex++
+                setStatus("جاري جلب كشف الحساب (صفحة $accountPageIndex)...")
+                view.postDelayed({ scrapeAccountPageAndContinue(view) }, 900)
+            } else {
+                setStatus("جاري جلب مواد التعليم الالكتروني...")
+                // No login attempt here on purpose. MainActivity now logs into
+                // Moodle (once) right before it opens this activity — see
+                // MainActivity.btnSisDashboard. Doing our own separate login here
+                // was what caused repeated failures: Moodle throttles/rejects
+                // logins after a few rapid automated attempts from the same
+                // account, so a retry loop here actually made things worse, not
+                // better. If we land on a login page anyway (session somehow
+                // missing/expired), we report it clearly instead of retrying.
+                // Use the Moodle SITE HOME page, not /my/ (Dashboard). The real
+                // captured HTML this scraper was written against came from the
+                // site home page (body id="page-site-index", title "Home | asulms"),
+                // where the "My courses" cards are present in the initial HTML.
+                // /my/ renders its "Course overview" cards via JavaScript after
+                // load, so scraping it right after onPageFinished found 0 cards
+                // every time — that, not the login flow, was the root cause.
+                phase = "moodleCourses"
+                view.loadUrl("https://elearning.asu.edu.bh/?redirect=0")
+            }
+        }
+    }
+
+    /**
+     * Appends today's cumulative GPA to a persisted history (SharedPreferences,
+     * survives across app opens) and returns the full history so far. SIS only
+     * ever gives us the CURRENT GPA, never a history — so this only starts
+     * accumulating a real trend from whenever this code first ran; there's no
+     * way to backfill past values. One entry per calendar day: if the app is
+     * opened more than once the same day, the existing entry for today is
+     * updated in place rather than duplicated.
+     */
+    private fun recordGpaSnapshot(): List<Pair<String, Double>> {
+        val gpa = DataStore.f("studentGpa").toDoubleOrNull() ?: return loadGpaHistory()
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        val history = loadGpaHistory().toMutableList()
+        val todayIdx = history.indexOfFirst { it.first == today }
+        if (todayIdx >= 0) history[todayIdx] = today to gpa else history.add(today to gpa)
+        val trimmed = history.takeLast(200)
+        val arr = JSONArray()
+        for ((d, g) in trimmed) {
+            arr.put(org.json.JSONObject().apply { put("d", d); put("g", g) })
+        }
+        getSharedPreferences("asu_prefs", MODE_PRIVATE).edit().putString("gpa_history", arr.toString()).apply()
+        return trimmed
+    }
+
+    private fun loadGpaHistory(): List<Pair<String, Double>> {
+        val raw = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("gpa_history", null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                val d = o.optString("d")
+                val g = o.optDouble("g", Double.NaN)
+                if (d.isBlank() || g.isNaN()) null else d to g
+            }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 
@@ -492,12 +553,22 @@ class SisDashboardActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
-        fun openCourseAssessments(moodleId: String, courseName: String) {
+        fun openCourseAssessments(
+            moodleId: String, courseName: String,
+            midDate: String, midTime: String, midRoom: String,
+            finDate: String, finTime: String, finRoom: String
+        ) {
             runOnUiThread {
                 if (moodleId.isBlank()) return@runOnUiThread
                 val intent = android.content.Intent(this@SisDashboardActivity, AssessmentsActivity::class.java)
                 intent.putExtra("moodleId", moodleId)
                 intent.putExtra("courseName", courseName)
+                intent.putExtra("midDate", midDate)
+                intent.putExtra("midTime", midTime)
+                intent.putExtra("midRoom", midRoom)
+                intent.putExtra("finDate", finDate)
+                intent.putExtra("finTime", finTime)
+                intent.putExtra("finRoom", finRoom)
                 startActivity(intent)
             }
         }
@@ -528,7 +599,7 @@ class SisDashboardActivity : AppCompatActivity() {
     private fun runDiagnostics(moodleCourses: List<CourseSummary>) {
         val studentName = DataStore.f("studentName")
         if (studentName.isBlank()) {
-            DebugLog.error("ما قدرنا نجيب اسم الطالب من SIS")
+            DebugLog.error("تعذّر الحصول على اسم الطالب من نظام SIS")
         } else {
             DebugLog.ok("بيانات الطالب الأساسية ($studentName)")
         }
@@ -564,7 +635,7 @@ class SisDashboardActivity : AppCompatActivity() {
         }
 
         if (moodleCourses.isEmpty()) {
-            DebugLog.error("ما انسحبت ولا مادة من الصفحة الرئيسية لـ Moodle — تأكد من الدخول التلقائي لموقع التعليم الالكتروني")
+            DebugLog.error("لم تُسحب أي مادة من الصفحة الرئيسية لـ Moodle — يرجى التأكد من نجاح الدخول التلقائي لموقع التعليم الإلكتروني")
         } else {
             DebugLog.ok("مواد Moodle المسحوبة — ${moodleCourses.size} مادة")
             for (mc in moodleCourses) {
@@ -615,14 +686,17 @@ class SisDashboardActivity : AppCompatActivity() {
         DataStore.attendance = toList(rawTables["attendance"])
         DataStore.transcript = toList(rawTables["transcript"])
         run {
-            val acc1 = toList(rawTables["account"])
-            val acc2 = toList(rawTables["account2"])
-            val header = acc1.firstOrNull()
+            val accountKeys = rawTables.keys.filter { it.startsWith("accountPage") }
+                .sortedBy { it.removePrefix("accountPage").toIntOrNull() ?: 0 }
+            val pages = accountKeys.map { toList(rawTables[it]) }
+            val header = pages.firstOrNull()?.firstOrNull()
             val seen = LinkedHashSet<String>()
             val dataRows = mutableListOf<List<String>>()
-            for (r in acc1.drop(1) + acc2.drop(1)) {
-                val key = r.joinToString("|")
-                if (seen.add(key)) dataRows.add(r)
+            for (page in pages) {
+                for (r in page.drop(1)) {
+                    val key = r.joinToString("|")
+                    if (seen.add(key)) dataRows.add(r)
+                }
             }
             DataStore.account = if (header != null) listOf(header) + dataRows else dataRows
         }
@@ -646,6 +720,7 @@ class SisDashboardActivity : AppCompatActivity() {
         DataStore.moodleCourseMap = MoodleCourseMatcher.match(DataStore.registration, moodleCourses)
 
         runDiagnostics(moodleCourses)
+        DataStore.gpaHistory = recordGpaSnapshot()
 
         DashboardHtmlBuilder.LANG = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
         val html = DashboardHtmlBuilder.build()
@@ -662,7 +737,7 @@ class SisDashboardActivity : AppCompatActivity() {
         if (requestCode == 101 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             pendingEvent?.let { (title, date, tl) -> insertCalendarEvent(title, date, tl.first, tl.second) }
         } else if (requestCode == 101) {
-            toast("نحتاج صلاحية التقويم لإضافة الموعد")
+            toast("يلزم منح صلاحية التقويم لإضافة الموعد")
         }
         pendingEvent = null
     }
@@ -691,7 +766,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
             val calId = primaryCalendarId()
             if (calId == null) {
-                toast("ما قدرنا نلقى تقويم بالجهاز")
+                toast("تعذّر العثور على تقويم في الجهاز")
                 return
             }
 
@@ -704,7 +779,7 @@ class SisDashboardActivity : AppCompatActivity() {
             )
             val alreadyExists = existsCursor?.use { it.count > 0 } ?: false
             if (alreadyExists) {
-                toast("الموعد مضاف مسبقًا بالتقويم")
+                toast("الموعد مضاف مسبقًا إلى التقويم")
                 return
             }
 
@@ -717,9 +792,9 @@ class SisDashboardActivity : AppCompatActivity() {
                 put(android.provider.CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
             }
             contentResolver.insert(android.provider.CalendarContract.Events.CONTENT_URI, values)
-            toast("انضاف للتقويم ✅")
+            toast("تمت الإضافة إلى التقويم ✅")
         } catch (e: Exception) {
-            toast("صار خطأ بالإضافة للتقويم")
+            toast("حدث خطأ أثناء الإضافة إلى التقويم")
         }
     }
 
@@ -753,6 +828,8 @@ object DataStore {
     var moodleCourses: List<CourseSummary> = emptyList()
     // normalized SIS course code -> Moodle course id
     var moodleCourseMap: Map<String, String> = emptyMap()
+    // chronological (date string "yyyy-MM-dd", cumulative GPA) snapshots, one per real scrape
+    var gpaHistory: List<Pair<String, Double>> = emptyList()
 
     fun f(key: String) = fields[key]?.trim()?.takeIf { it != "-" && it.isNotEmpty() } ?: ""
 
@@ -768,5 +845,6 @@ object DataStore {
         planNames = emptyList()
         moodleCourses = emptyList()
         moodleCourseMap = emptyMap()
+        gpaHistory = emptyList()
     }
 }
