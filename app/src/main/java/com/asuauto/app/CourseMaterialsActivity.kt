@@ -1,11 +1,8 @@
 package com.asuauto.app
 
 import android.annotation.SuppressLint
-import android.app.DownloadManager
-import android.content.Context
-import android.net.Uri
+import android.content.Intent
 import android.os.Bundle
-import android.os.Environment
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
@@ -13,8 +10,11 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import org.json.JSONArray
+import java.io.File
 
 class CourseMaterialsActivity : AppCompatActivity() {
 
@@ -25,6 +25,7 @@ class CourseMaterialsActivity : AppCompatActivity() {
 
     private var moodleId = ""
     private var courseName = ""
+    private var lastWeeks: List<MoodleWeek> = emptyList()
 
     // Extraction JS: walks each weekly section, skips categories whose
     // activity list only contains the "asu-category-empty" placeholder
@@ -86,7 +87,7 @@ class CourseMaterialsActivity : AppCompatActivity() {
         resultWebView.addJavascriptInterface(DownloadBridge(), "AndroidBridge")
 
         if (moodleId.isBlank()) {
-            statusText.text = "ما قدرنا نلقى المادة على موقع التعليم الالكتروني"
+            statusText.text = "تعذّر العثور على المادة في موقع التعليم الإلكتروني"
             return
         }
 
@@ -146,15 +147,16 @@ class CourseMaterialsActivity : AppCompatActivity() {
     }
 
     private fun showResult(weeks: List<MoodleWeek>, sessionExpired: Boolean) {
+        lastWeeks = weeks
         runOnUiThread {
             CourseMaterialsHtmlBuilder.LANG =
                 getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
             val html = if (sessionExpired) {
                 "<html dir='rtl'><body style='font-family:sans-serif;padding:20px;text-align:center;color:#888'>" +
-                    "انتهت الجلسة، رجع للوحة الرئيسية وحاول مرة ثانية" +
+                    "انتهت الجلسة، يرجى العودة إلى اللوحة الرئيسية والمحاولة مرة أخرى" +
                     "</body></html>"
             } else {
-                CourseMaterialsHtmlBuilder.build(courseName, weeks)
+                CourseMaterialsHtmlBuilder.build(courseName, weeks, downloadedNames = downloadedFileNames())
             }
             resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
             progressLayout.visibility = View.GONE
@@ -162,36 +164,107 @@ class CourseMaterialsActivity : AppCompatActivity() {
         }
     }
 
+    /** Re-renders the same list with fresh "already downloaded" checkmarks, no re-fetch. */
+    private fun refreshList() {
+        CourseMaterialsHtmlBuilder.LANG = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
+        val html = CourseMaterialsHtmlBuilder.build(courseName, lastWeeks, downloadedNames = downloadedFileNames())
+        resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+    }
+
     inner class DownloadBridge {
         @JavascriptInterface
         fun downloadFile(url: String, name: String, type: String) {
-            runOnUiThread { startDownload(url, name, type) }
+            runOnUiThread { openOrDownload(url, name, type) }
         }
     }
 
-    private fun startDownload(url: String, name: String, type: String) {
-        try {
-            val cookie = CookieManager.getInstance().getCookie(url) ?: ""
-            val extension = type.trim().lowercase().ifBlank { "" }
-            val fileName = if (extension.isNotBlank() && !name.lowercase().endsWith(".$extension")) {
-                "$name.$extension"
-            } else {
-                name
-            }
+    private fun sanitizeFileName(name: String) = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
 
-            val request = DownloadManager.Request(Uri.parse(url))
-                .addRequestHeader("Cookie", cookie)
-                .setTitle(fileName)
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-                .setAllowedOverMetered(true)
-                .setAllowedOverRoaming(true)
+    private fun localFilesDir(): File {
+        val dir = File(filesDir, "moodle_files/$moodleId")
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
 
-            val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            manager.enqueue(request)
-            android.widget.Toast.makeText(this, "جاري تنزيل: $fileName", android.widget.Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(this, "صار خطأ بالتنزيل", android.widget.Toast.LENGTH_SHORT).show()
+    private fun localFileFor(name: String, type: String): File {
+        val ext = type.trim().lowercase()
+        val fileName = sanitizeFileName(name) + if (ext.isNotBlank() && !name.lowercase().endsWith(".$ext")) ".$ext" else ""
+        return File(localFilesDir(), fileName)
+    }
+
+    private fun downloadedFileNames(): Set<String> =
+        localFilesDir().listFiles()?.map { it.name }?.toSet() ?: emptySet()
+
+    /**
+     * First tap on a file: downloads it once into the app's own private
+     * storage (not the public Downloads folder — that way we can reliably
+     * tell later whether it's already there, and the file only shows up
+     * inside this app, matching what was asked for). Every tap after that
+     * just opens the already-downloaded copy directly, no network needed —
+     * this is what makes it work from a basement classroom or an elevator
+     * with no signal, as long as it was opened at least once before with a
+     * connection.
+     */
+    private fun openOrDownload(url: String, name: String, type: String) {
+        val file = localFileFor(name, type)
+        if (file.exists() && file.length() > 0) {
+            openLocalFile(file)
+            return
         }
+        Toast.makeText(this, "جاري تنزيل: ${file.name}", Toast.LENGTH_SHORT).show()
+        Thread {
+            try {
+                val cookie = CookieManager.getInstance().getCookie(url) ?: ""
+                val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    setRequestProperty("Cookie", cookie)
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                    instanceFollowRedirects = true
+                }
+                connection.connect()
+                if (connection.responseCode in 200..299) {
+                    val tempFile = File(file.parentFile, "${file.name}.part")
+                    connection.inputStream.use { input ->
+                        java.io.FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+                    }
+                    tempFile.renameTo(file)
+                    runOnUiThread {
+                        Toast.makeText(this, "تم التنزيل ✅", Toast.LENGTH_SHORT).show()
+                        openLocalFile(file)
+                        refreshList()
+                    }
+                } else {
+                    runOnUiThread { Toast.makeText(this, "تعذّر تنزيل الملف (${connection.responseCode})", Toast.LENGTH_SHORT).show() }
+                }
+            } catch (e: Exception) {
+                runOnUiThread { Toast.makeText(this, "حدث خطأ أثناء التنزيل", Toast.LENGTH_SHORT).show() }
+            }
+        }.start()
+    }
+
+    private fun openLocalFile(file: File) {
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val mime = guessMime(file.extension)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "تعذّر فتح الملف — تأكد من وجود تطبيق يدعم هذا النوع", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun guessMime(ext: String): String = when (ext.lowercase()) {
+        "pdf" -> "application/pdf"
+        "doc" -> "application/msword"
+        "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "ppt" -> "application/vnd.ms-powerpoint"
+        "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        "xls" -> "application/vnd.ms-excel"
+        "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "txt" -> "text/plain"
+        else -> "*/*"
     }
 }
