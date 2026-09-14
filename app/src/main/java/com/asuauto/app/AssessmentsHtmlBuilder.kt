@@ -19,7 +19,7 @@ object AssessmentsHtmlBuilder {
     private fun t(ar: String, en: String) = if (LANG == "en") en else ar
     private fun esc(s: String) = s.replace("\"", "&quot;").replace("<", "&lt;")
 
-    fun build(courseName: String, items: List<AssessmentItem>): String {
+    fun build(courseName: String, items: List<AssessmentItem>, hasExamDates: Boolean = false): String {
         val dir = if (LANG == "en") "ltr" else "rtl"
         val sb = StringBuilder()
         sb.append(
@@ -30,6 +30,7 @@ object AssessmentsHtmlBuilder {
             body{font-family:sans-serif;background:#f2f3f5;margin:0}
             .header{position:sticky;top:0;background:#2c3e50;color:#fff;padding:14px;font-size:15px;font-weight:bold}
             .page{padding:12px}
+            .unifiedBtn{display:block;text-align:center;background:#1D9E75;color:#fff;font-size:13px;font-weight:bold;padding:12px;border-radius:10px;margin-bottom:14px}
             .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px}
             .catPill{display:inline-block;color:#fff;font-size:10px;padding:2px 9px;border-radius:10px;background:#8e44ad;margin-bottom:8px}
             .itemName{font-size:14px;font-weight:bold;margin-bottom:6px}
@@ -45,8 +46,16 @@ object AssessmentsHtmlBuilder {
             """.trimIndent()
         )
 
+        if (items.isNotEmpty() || hasExamDates) {
+            sb.append(
+                "<div class='unifiedBtn' onclick=\"addAllToCalendar()\">" +
+                    t("أضف كل مواعيد هذه المادة للتقويم (الامتحانات + الواجبات + البحوث)", "Add all dates for this course to Calendar (exams + assignments + research)") +
+                    "</div>"
+            )
+        }
+
         if (items.isEmpty()) {
-            sb.append("<div class='empty'>${t("ما فيه واجبات أو بحوث مضافة لهذي المادة", "No assignments or research added for this course")}</div>")
+            sb.append("<div class='empty'>${t("لا توجد واجبات أو بحوث مضافة لهذه المادة", "No assignments or research added for this course")}</div>")
         } else {
             for (item in items) {
                 sb.append("<div class='card'>")
@@ -55,12 +64,12 @@ object AssessmentsHtmlBuilder {
                 if (item.dueDateRaw.isNotBlank()) {
                     sb.append("<div class='dueRow'>${t("آخر موعد للتسليم", "Due")}: ${esc(item.dueDateRaw)}</div>")
                 } else {
-                    sb.append("<div class='dueRowNone'>${t("ما فيه موعد تسليم محدد", "No due date set")}</div>")
+                    sb.append("<div class='dueRowNone'>${t("لا يوجد موعد تسليم محدد", "No due date set")}</div>")
                 }
                 if (item.instructionsText.isNotBlank()) {
                     sb.append("<div class='instructions'>${esc(item.instructionsText)}</div>")
                 } else {
-                    sb.append("<div class='instructionsNone'>${t("الدكتور ما حط تعليمات لهذا الواجب/البحث", "No instructions added by the instructor")}</div>")
+                    sb.append("<div class='instructionsNone'>${t("لم يُضف المدرّس تعليمات لهذا الواجب/البحث", "No instructions added by the instructor")}</div>")
                 }
                 if (item.dueDateRaw.isNotBlank()) {
                     sb.append(
@@ -78,6 +87,9 @@ object AssessmentsHtmlBuilder {
             <script>
             function addToCalendar(name,dueDateRaw){
                 if(typeof AndroidBridge!=='undefined') AndroidBridge.addAssessmentToCalendar(name,dueDateRaw);
+            }
+            function addAllToCalendar(){
+                if(typeof AndroidBridge!=='undefined') AndroidBridge.addAllToCalendar();
             }
             </script>
             </body></html>
