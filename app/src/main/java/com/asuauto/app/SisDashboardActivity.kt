@@ -29,7 +29,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 5
+    private val CACHE_VERSION = 7
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -180,6 +180,7 @@ class SisDashboardActivity : AppCompatActivity() {
         planNames.clear()
         rawTables.clear()
         DataStore.reset()
+        DebugLog.reset()
 
         progressLayout.visibility = View.VISIBLE
         resultWebView.visibility = View.GONE
@@ -325,24 +326,38 @@ class SisDashboardActivity : AppCompatActivity() {
                         val moodleUser = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("username", "") ?: ""
                         val moodlePass = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("password", "") ?: ""
                         view.evaluateJavascript("stillOnMoodleLogin();") { stillOnLogin ->
-                            if (stillOnLogin == "true" && moodleUser.isNotBlank() && moodlePass.isNotBlank()) {
-                                val js = """
-                                    (function() {
-                                        var u = document.querySelector('input[name="username"]');
-                                        var p = document.querySelector('input[name="password"]');
-                                        if (u && p) {
-                                            u.value = "$moodleUser"; p.value = "$moodlePass";
-                                            u.dispatchEvent(new Event('input',{bubbles:true}));
-                                            p.dispatchEvent(new Event('input',{bubbles:true}));
-                                            var b = document.querySelector('#loginbtn');
-                                            if (b) setTimeout(function(){ b.click(); }, 400);
-                                        }
-                                    })();
-                                """.trimIndent()
-                                view.evaluateJavascript(js, null)
+                            if (stillOnLogin == "true") {
+                                // Still on the login page: fill and submit, but stay in
+                                // "moodleLogin" phase — the submit will trigger a redirect
+                                // whose own onPageFinished lands back in this same branch,
+                                // where we check again. Changing phase here (before we know
+                                // login actually succeeded) is what caused the previous bug:
+                                // the redirect page got misrouted into moodleCourses scraping
+                                // before /my/ had even loaded, yielding 0 courses every time.
+                                if (moodleUser.isNotBlank() && moodlePass.isNotBlank()) {
+                                    val js = """
+                                        (function() {
+                                            var u = document.querySelector('input[name="username"]');
+                                            var p = document.querySelector('input[name="password"]');
+                                            if (u && p) {
+                                                u.value = "$moodleUser"; p.value = "$moodlePass";
+                                                u.dispatchEvent(new Event('input',{bubbles:true}));
+                                                p.dispatchEvent(new Event('input',{bubbles:true}));
+                                                var b = document.querySelector('#loginbtn');
+                                                if (b) setTimeout(function(){ b.click(); }, 400);
+                                            }
+                                        })();
+                                    """.trimIndent()
+                                    view.evaluateJavascript(js, null)
+                                } else {
+                                    DebugLog.error("ما فيه بيانات دخول محفوظة لموقع التعليم الالكتروني")
+                                }
+                                // phase stays "moodleLogin" — wait for the redirect.
+                            } else {
+                                // Actually logged in now (or was already) — safe to move on.
+                                phase = "moodleCourses"
+                                view.loadUrl("https://elearning.asu.edu.bh/my/")
                             }
-                            phase = "moodleCourses"
-                            view.postDelayed({ view.loadUrl("https://elearning.asu.edu.bh/my/") }, 1500)
                         }
                     }
                     "moodleCourses" -> {
@@ -422,6 +437,7 @@ class SisDashboardActivity : AppCompatActivity() {
         fun checkLogin(failed: Boolean) {
             if (failed && phase != "done" && phase != "failed") {
                 phase = "failed"
+                DebugLog.error("فشل تسجيل الدخول لـ SIS (اسم المستخدم/الرقم السري غير صحيح)")
                 runOnUiThread {
                     resultWebView.visibility = View.GONE
                     webView.visibility = View.GONE
@@ -486,6 +502,90 @@ class SisDashboardActivity : AppCompatActivity() {
         return rows
     }
 
+    private fun runDiagnostics(moodleCourses: List<CourseSummary>) {
+        val studentName = DataStore.f("studentName")
+        if (studentName.isBlank()) {
+            DebugLog.error("ما قدرنا نجيب اسم الطالب من SIS")
+        } else {
+            DebugLog.ok("بيانات الطالب الأساسية ($studentName)")
+        }
+
+        if (DataStore.registration.size <= 1) {
+            DebugLog.error("جدول المواد المسجلة (registration) فاضي")
+        } else {
+            DebugLog.ok("جدول التسجيل — ${DataStore.registration.size - 1} مادة")
+        }
+
+        if (DataStore.semesterGrades.size <= 1) {
+            DebugLog.warn("جدول درجات الفصل فاضي (طبيعي أول الفصل قبل صدور درجات)")
+        } else {
+            DebugLog.ok("جدول درجات الفصل — ${DataStore.semesterGrades.size - 1} صف")
+        }
+
+        if (DataStore.attendance.size <= 1) {
+            DebugLog.warn("جدول الحضور والغياب فاضي")
+        } else {
+            DebugLog.ok("جدول الحضور والغياب — ${DataStore.attendance.size - 1} صف")
+        }
+
+        if (DataStore.transcript.isEmpty()) {
+            DebugLog.warn("كشف الدرجات (transcript) فاضي")
+        } else {
+            DebugLog.ok("كشف الدرجات — ${DataStore.transcript.size} صف")
+        }
+
+        if (DataStore.account.size <= 1) {
+            DebugLog.warn("كشف الحساب فاضي")
+        } else {
+            DebugLog.ok("كشف الحساب — ${DataStore.account.size - 1} صف")
+        }
+
+        if (moodleCourses.isEmpty()) {
+            DebugLog.error("ما انسحبت ولا مادة من Moodle (/my/) — تأكد من الدخول التلقائي لموقع التعليم الالكتروني")
+        } else {
+            DebugLog.ok("مواد Moodle المسحوبة — ${moodleCourses.size} مادة")
+            for (mc in moodleCourses) {
+                DebugLog.ok("  Moodle: ${mc.name} (id=${mc.moodleId})")
+            }
+        }
+
+        val sisCount = (DataStore.registration.size - 1).coerceAtLeast(0)
+        val matchedCount = DataStore.moodleCourseMap.size
+        if (moodleCourses.isNotEmpty() && sisCount > 0) {
+            if (matchedCount == 0) {
+                DebugLog.error("ولا مادة انطابقت بين SIS و Moodle — راجع أسماء المواد بالأعلى")
+            } else if (matchedCount < sisCount) {
+                DebugLog.warn("انطابقت $matchedCount من أصل $sisCount مادة بس")
+            } else {
+                DebugLog.ok("كل المواد ($matchedCount) انطابقت مع Moodle بنجاح")
+            }
+
+            val nameIdx = colIdxForDebug(DataStore.registration.firstOrNull() ?: emptyList(), "اسم المقرر")
+            val codeIdx = colIdxForDebug(DataStore.registration.firstOrNull() ?: emptyList(), "رمز")
+            if (nameIdx >= 0 && codeIdx >= 0) {
+                for (r in 1 until DataStore.registration.size) {
+                    val row = DataStore.registration[r]
+                    val code = row.getOrNull(codeIdx)?.trim().orEmpty()
+                    val name = row.getOrNull(nameIdx)?.trim().orEmpty()
+                    if (code.isBlank()) continue
+                    val normCode = code.uppercase().replace(Regex("[^A-Z0-9]"), "")
+                    val moodleId = DataStore.moodleCourseMap[normCode]
+                    if (moodleId != null) {
+                        val matchedName = moodleCourses.find { it.moodleId == moodleId }?.name ?: "?"
+                        DebugLog.ok("SIS: \"$name\" ($code) ✔ ↔ Moodle: \"$matchedName\"")
+                    } else {
+                        DebugLog.warn("SIS: \"$name\" ($code) ✘ ما لقى تطابق بـ Moodle")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun colIdxForDebug(header: List<String>, needle: String): Int {
+        for (i in header.indices) if (header[i].replace("\n", " ").contains(needle)) return i
+        return -1
+    }
+
     private fun buildAndShowDashboard() {
         DataStore.registration = toList(rawTables["registration"])
         DataStore.semesterGrades = toList(rawTables["semesterGrades"])
@@ -521,6 +621,8 @@ class SisDashboardActivity : AppCompatActivity() {
         }
         DataStore.moodleCourses = moodleCourses
         DataStore.moodleCourseMap = MoodleCourseMatcher.match(DataStore.registration, moodleCourses)
+
+        runDiagnostics(moodleCourses)
 
         DashboardHtmlBuilder.LANG = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
         val html = DashboardHtmlBuilder.build()
