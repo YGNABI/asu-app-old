@@ -80,15 +80,30 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
-        <EditText
-            android:id="@+id/passwordInput"
-            android:hint="كلمة السر"
-            android:inputType="textPassword"
-            android:background="@android:drawable/edit_text"
-            android:padding="12dp"
+        <FrameLayout
             android:layout_marginTop="10dp"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content">
+
+            <EditText
+                android:id="@+id/passwordInput"
+                android:hint="كلمة السر"
+                android:inputType="textPassword"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp"
+                android:paddingEnd="44dp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <ImageView
+                android:id="@+id/togglePasswordVisibility"
+                android:src="@android:drawable/ic_menu_view"
+                android:contentDescription="إظهار كلمة السر"
+                android:padding="10dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </FrameLayout>
 
         <LinearLayout
             android:orientation="horizontal"
@@ -128,19 +143,9 @@
         android:layout_height="wrap_content">
 
         <Button
-            android:id="@+id/btnElearning"
-            android:text="Elearning"
-            android:layout_marginEnd="4dp"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content" />
-
-        <Button
             android:id="@+id/btnSos"
             android:text="SOS"
-            android:layout_marginStart="4dp"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content" />
     </LinearLayout>
 
