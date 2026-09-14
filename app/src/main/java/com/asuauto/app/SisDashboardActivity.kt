@@ -29,7 +29,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 9
+    private val CACHE_VERSION = 10
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -172,8 +172,6 @@ class SisDashboardActivity : AppCompatActivity() {
         }
     """.trimIndent()
 
-    private var moodleLoginAttempts = 0
-
     private fun startScraping() {
         phase = "login"
         sessionId = ""
@@ -181,7 +179,6 @@ class SisDashboardActivity : AppCompatActivity() {
         planLinks.clear()
         planNames.clear()
         rawTables.clear()
-        moodleLoginAttempts = 0
         DataStore.reset()
         DebugLog.reset()
 
@@ -320,97 +317,56 @@ class SisDashboardActivity : AppCompatActivity() {
                         phase = "accountPage2"
                         view.postDelayed({
                             view.evaluateJavascript("AndroidBridge.tbl('account2', scrapeTableByLabel('تفاصيل كشف الحساب '));", null)
-                            setStatus("جاري ربط المواد بموقع التعليم الالكتروني...")
-                            // Try the course list directly first — MainActivity already logs
-                            // the user into elearning.asu.edu.bh on app start, so the session
-                            // cookie usually already exists. Deliberately visiting the LOGIN
-                            // page while already authenticated is what was causing Moodle's
-                            // "You are already logged in as X, log out before logging in as a
-                            // different user?" interstitial — that page has no password field,
-                            // so the old code misread it as a successful login and moved on
-                            // with a broken/interrupted session, yielding 0 courses every time.
+                            setStatus("جاري جلب مواد التعليم الالكتروني...")
+                            // No login attempt here on purpose. MainActivity now logs into
+                            // Moodle (once) right before it opens this activity — see
+                            // MainActivity.btnSisDashboard. Doing our own separate login here
+                            // was what caused repeated failures: Moodle throttles/rejects
+                            // logins after a few rapid automated attempts from the same
+                            // account, so a retry loop here actually made things worse, not
+                            // better. If we land on a login page anyway (session somehow
+                            // missing/expired), we report it clearly instead of retrying.
                             phase = "moodleCourses"
                             view.loadUrl("https://elearning.asu.edu.bh/my/")
                         }, 1200)
                     }
-                    "moodleLogin" -> {
-                        val moodleUser = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("username", "") ?: ""
-                        val moodlePass = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("password", "") ?: ""
-                        view.evaluateJavascript("stillOnMoodleLogin();") { stillOnLogin ->
-                            if (stillOnLogin == "true") {
-                                if (moodleUser.isBlank() || moodlePass.isBlank()) {
-                                    DebugLog.error("ما فيه بيانات دخول محفوظة لموقع التعليم الالكتروني")
-                                    phase = "done"
-                                    view.postDelayed({ buildAndShowDashboard() }, 300)
-                                    return@evaluateJavascript
-                                }
-                                moodleLoginAttempts++
-                                if (moodleLoginAttempts > 3) {
-                                    // Capped so a wrong/rejected password (or a login form the
-                                    // auto-fill JS can't actually submit) can't loop silently
-                                    // until the 60s global timeout swallows the real reason.
-                                    DebugLog.error("فشل تسجيل الدخول لموقع التعليم الالكتروني (Moodle) بعد 3 محاولات — تحقق من كلمة السر أو شكل نموذج الدخول")
-                                    phase = "done"
-                                    view.postDelayed({ buildAndShowDashboard() }, 300)
-                                    return@evaluateJavascript
-                                }
-                                DebugLog.warn("محاولة دخول Moodle رقم $moodleLoginAttempts — لسا بصفحة الدخول")
-                                val js = """
-                                    (function() {
-                                        var u = document.querySelector('input[name="username"]');
-                                        var p = document.querySelector('input[name="password"]');
-                                        if (u && p) {
-                                            u.value = "$moodleUser"; p.value = "$moodlePass";
-                                            u.dispatchEvent(new Event('input',{bubbles:true}));
-                                            p.dispatchEvent(new Event('input',{bubbles:true}));
-                                            u.dispatchEvent(new Event('change',{bubbles:true}));
-                                            p.dispatchEvent(new Event('change',{bubbles:true}));
-                                            var f = u.closest('form');
-                                            var b = document.querySelector('#loginbtn');
-                                            setTimeout(function(){
-                                                if (b) { b.click(); }
-                                                else if (f) { f.submit(); }
-                                            }, 500);
-                                        }
-                                    })();
-                                """.trimIndent()
-                                view.evaluateJavascript(js, null)
-                                // phase stays "moodleLogin" — wait for the redirect and re-check.
-                            } else {
-                                DebugLog.ok("تسجيل الدخول لـ Moodle نجح (محاولة $moodleLoginAttempts)")
-                                phase = "moodleCourses"
-                                view.loadUrl("https://elearning.asu.edu.bh/my/")
-                            }
-                        }
-                    }
                     "moodleCourses" -> {
                         view.evaluateJavascript("stillOnMoodleLogin();") { stillOnLogin ->
                             if (stillOnLogin == "true") {
-                                // Genuinely not authenticated (no MainActivity session, or it
-                                // expired) — this is the ONLY place we go to the login page,
-                                // and only because /my/ itself redirected us to it.
-                                DebugLog.warn("ما فيه جلسة Moodle سارية — بنسوي تسجيل دخول")
-                                phase = "moodleLogin"
-                                view.loadUrl("https://elearning.asu.edu.bh/login/index.php")
+                                DebugLog.error("ما فيه جلسة Moodle — رجع للصفحة الرئيسية واضغط \"لوحة SIS الذكية\" مرة ثانية (لازم يسجل دخول Moodle قبل ما يفتح اللوحة)")
+                                phase = "done"
+                                view.postDelayed({ buildAndShowDashboard() }, 300)
                                 return@evaluateJavascript
                             }
-                            view.evaluateJavascript(
-                                "document.title.indexOf('Log out') >= 0 || document.body.innerText.indexOf('log out before logging in') >= 0 ? 'true' : 'false';"
-                            ) { onLogoutInterstitial ->
-                                if (onLogoutInterstitial == "true") {
-                                    // The "already logged in as X, log out?" page — dismiss it
-                                    // by going to /my/ again (this only happened before when we
-                                    // hit the login page while already authenticated; kept here
-                                    // as a safety net in case some navigation still lands on it).
-                                    DebugLog.warn("طلعت صفحة \"مسجل دخول مسبقًا\" من Moodle — نعيد المحاولة")
-                                    phase = "moodleCourses"
-                                    view.loadUrl("https://elearning.asu.edu.bh/my/")
-                                } else {
-                                    DebugLog.ok("جلسة Moodle سارية بدون الحاجة لتسجيل دخول جديد")
-                                    view.evaluateJavascript("AndroidBridge.tbl('moodleCourses', scrapeMoodleCourses());", null)
-                                    phase = "done"
-                                    view.postDelayed({ buildAndShowDashboard() }, 300)
+                            // Session is fine. Grab the actual page state alongside the course
+                            // extraction so an empty result can be diagnosed from what's really
+                            // on the page, instead of guessing again next round.
+                            val diagJs = """
+                                (function() {
+                                    return JSON.stringify({
+                                        url: location.href,
+                                        title: document.title,
+                                        cardCount: document.querySelectorAll('[data-region="course-content"]').length,
+                                        bodySnippet: (document.body.innerText || '').trim().slice(0, 200)
+                                    });
+                                })();
+                            """.trimIndent()
+                            view.evaluateJavascript(diagJs) { rawDiag ->
+                                try {
+                                    val diag = org.json.JSONObject(org.json.JSONTokener(rawDiag).nextValue() as String)
+                                    val cardCount = diag.optInt("cardCount", -1)
+                                    if (cardCount <= 0) {
+                                        DebugLog.error(
+                                            "صفحة /my/ ما فيها بطاقات مواد — الرابط الفعلي: ${diag.optString("url")} | " +
+                                                "العنوان: ${diag.optString("title")} | مقتطف: ${diag.optString("bodySnippet")}"
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    DebugLog.warn("تعذر قراءة تشخيص صفحة /my/: ${e.message}")
                                 }
+                                view.evaluateJavascript("AndroidBridge.tbl('moodleCourses', scrapeMoodleCourses());", null)
+                                phase = "done"
+                                view.postDelayed({ buildAndShowDashboard() }, 300)
                             }
                         }
                     }

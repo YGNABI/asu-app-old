@@ -125,9 +125,18 @@ class MainActivity : AppCompatActivity() {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
 
+        var pendingSisDashboardLaunch = false
+
+        fun stillOnAnyLoginPage(view: WebView, done: (Boolean) -> Unit) {
+            view.evaluateJavascript(
+                "document.querySelector('input[type=\"password\"]') ? 'true' : 'false';"
+            ) { result -> done(result == "true") }
+        }
+
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                if (view == null) return
                 val user = prefs.getString("username", "") ?: ""
                 val pass = prefs.getString("password", "") ?: ""
                 if (user.isEmpty() || pass.isEmpty()) return
@@ -146,7 +155,24 @@ class MainActivity : AppCompatActivity() {
                         if (btn) { setTimeout(function(){ btn.click(); }, 300); }
                     })();
                 """.trimIndent()
-                view?.evaluateJavascript(js, null)
+                view.evaluateJavascript(js, null)
+
+                // If this page load was the elearning warm-up we kicked off before opening
+                // the SIS dashboard, wait to see whether we actually landed on the logged-in
+                // dashboard (no password field) before launching the activity — this is what
+                // replaces SisDashboardActivity's own separate (and unreliable — it was
+                // tripping Moodle's login-attempt throttling) login attempt. One login, one
+                // place, done before the dashboard ever opens.
+                if (pendingSisDashboardLaunch) {
+                    stillOnAnyLoginPage(view) { stillOnLogin ->
+                        if (!stillOnLogin) {
+                            pendingSisDashboardLaunch = false
+                            startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                        }
+                        // If still on the login page, just wait for the next onPageFinished
+                        // (the submit above will trigger it) — no manual retry loop here.
+                    }
+                }
             }
         }
 
@@ -158,7 +184,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnSisDashboard).setOnClickListener {
-            startActivity(Intent(this, SisDashboardActivity::class.java))
+            pendingSisDashboardLaunch = true
+            android.widget.Toast.makeText(this, "جاري تجهيز موقع التعليم الالكتروني...", android.widget.Toast.LENGTH_SHORT).show()
+            webView.loadUrl("https://elearning.asu.edu.bh/my/")
         }
     }
 
