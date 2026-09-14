@@ -23,6 +23,7 @@
         </activity>
         <activity android:name=".SisDashboardActivity" android:exported="false" />
         <activity android:name=".CourseMaterialsActivity" android:exported="false" />
+        <activity android:name=".AssessmentsActivity" android:exported="false" />
     </application>
 
 </manifest>
