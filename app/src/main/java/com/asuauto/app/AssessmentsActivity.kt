@@ -27,6 +27,12 @@ class AssessmentsActivity : AppCompatActivity() {
 
     private var moodleId = ""
     private var courseName = ""
+    private var midDate = ""
+    private var midTime = ""
+    private var midRoom = ""
+    private var finDate = ""
+    private var finTime = ""
+    private var finRoom = ""
 
     // Raw entries found on the Assessment Hub page: name, url, category label.
     // Filled in with due date + instructions one by one afterward.
@@ -35,8 +41,7 @@ class AssessmentsActivity : AppCompatActivity() {
     private val filledItems = mutableListOf<AssessmentItem>()
     private var fetchIndex = 0
 
-    private var pendingEventTitle: String? = null
-    private var pendingEventMillis: Long? = null
+    private var pendingCalendarAction: (() -> Unit)? = null
 
     // Only "Assignments" and "Research & Projects" categories — quizzes/exams are handled
     // elsewhere (the exam-date calendar buttons already on the course popup), matching what
@@ -90,6 +95,12 @@ class AssessmentsActivity : AppCompatActivity() {
 
         moodleId = intent.getStringExtra("moodleId") ?: ""
         courseName = intent.getStringExtra("courseName") ?: ""
+        midDate = intent.getStringExtra("midDate") ?: ""
+        midTime = intent.getStringExtra("midTime") ?: ""
+        midRoom = intent.getStringExtra("midRoom") ?: ""
+        finDate = intent.getStringExtra("finDate") ?: ""
+        finTime = intent.getStringExtra("finTime") ?: ""
+        finRoom = intent.getStringExtra("finRoom") ?: ""
 
         progressLayout = findViewById(R.id.progressLayout)
         statusText = findViewById(R.id.statusText)
@@ -102,7 +113,7 @@ class AssessmentsActivity : AppCompatActivity() {
         resultWebView.addJavascriptInterface(AssessmentsBridge(), "AndroidBridge")
 
         if (moodleId.isBlank()) {
-            statusText.text = "ما قدرنا نلقى المادة على موقع التعليم الالكتروني"
+            statusText.text = "تعذّر العثور على المادة في موقع التعليم الإلكتروني"
             return
         }
 
@@ -183,10 +194,10 @@ class AssessmentsActivity : AppCompatActivity() {
                 getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
             val html = if (sessionExpired) {
                 "<html dir='rtl'><body style='font-family:sans-serif;padding:20px;text-align:center;color:#888'>" +
-                    "انتهت الجلسة، رجع للوحة الرئيسية وحاول مرة ثانية" +
+                    "انتهت الجلسة، يرجى العودة إلى اللوحة الرئيسية والمحاولة مرة أخرى" +
                     "</body></html>"
             } else {
-                AssessmentsHtmlBuilder.build(courseName, items)
+                AssessmentsHtmlBuilder.build(courseName, items, hasExamDates = midDate.isNotBlank() || finDate.isNotBlank())
             }
             resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
             progressLayout.visibility = View.GONE
@@ -198,6 +209,11 @@ class AssessmentsActivity : AppCompatActivity() {
         @JavascriptInterface
         fun addAssessmentToCalendar(name: String, dueDateRaw: String) {
             runOnUiThread { addToCalendar(name, dueDateRaw) }
+        }
+
+        @JavascriptInterface
+        fun addAllToCalendar() {
+            runOnUiThread { addAllForCourse() }
         }
     }
 
@@ -228,11 +244,69 @@ class AssessmentsActivity : AppCompatActivity() {
     private fun addToCalendar(title: String, dueDateRaw: String) {
         val millis = parseDueDate(dueDateRaw)
         if (millis == null) {
-            Toast.makeText(this, "ما قدرنا نفهم تاريخ التسليم", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "تعذّر فهم تاريخ التسليم", Toast.LENGTH_SHORT).show()
             return
         }
-        pendingEventTitle = title
-        pendingEventMillis = millis
+        ensureCalendarPermission {
+            val result = insertCalendarEventGeneric("تسليم: $title", millis, 7)
+            val msg = when (result) {
+                InsertResult.ADDED -> "تمت الإضافة إلى التقويم ✅ (تذكير قبل أسبوع)"
+                InsertResult.DUPLICATE -> "الموعد مضاف مسبقًا إلى التقويم"
+                InsertResult.ERROR -> "حدث خطأ أثناء الإضافة إلى التقويم"
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * The "one button per course" the user asked for: adds the midterm exam,
+     * final exam, and every assignment/research due date already loaded on
+     * this screen, in a single tap — each with its own correct reminder lead
+     * time (10 days for exams, 7 for assignments/research).
+     */
+    private fun addAllForCourse() {
+        ensureCalendarPermission {
+            var added = 0
+            var dup = 0
+            var failed = 0
+
+            fun tally(r: InsertResult) {
+                when (r) {
+                    InsertResult.ADDED -> added++
+                    InsertResult.DUPLICATE -> dup++
+                    InsertResult.ERROR -> failed++
+                }
+            }
+
+            if (midDate.isNotBlank()) {
+                parseExamDateTime(midDate, midTime)?.let {
+                    tally(insertCalendarEventGeneric("امتحان المنتصف: $courseName", it, 10, midRoom))
+                }
+            }
+            if (finDate.isNotBlank()) {
+                parseExamDateTime(finDate, finTime)?.let {
+                    tally(insertCalendarEventGeneric("الامتحان النهائي: $courseName", it, 10, finRoom))
+                }
+            }
+            for (item in filledItems) {
+                if (item.dueDateRaw.isBlank()) continue
+                parseDueDate(item.dueDateRaw)?.let {
+                    tally(insertCalendarEventGeneric("تسليم: ${item.name}", it, 7))
+                }
+            }
+
+            val msg = when {
+                added == 0 && dup == 0 && failed == 0 -> "ما فيه مواعيد متوفرة لهذه المادة"
+                failed > 0 -> "أُضيف $added موعدًا، و$dup مضاف مسبقًا، وتعذّرت إضافة $failed"
+                dup > 0 -> "أُضيف $added موعدًا، و$dup مضاف مسبقًا بالتقويم"
+                else -> "أُضيفت جميع مواعيد المادة إلى التقويم ✅ ($added)"
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun ensureCalendarPermission(action: () -> Unit) {
+        pendingCalendarAction = action
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
                 this,
@@ -240,21 +314,19 @@ class AssessmentsActivity : AppCompatActivity() {
                 102
             )
         } else {
-            insertAssessmentEvent(title, millis)
+            action()
+            pendingCalendarAction = null
         }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 102 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            val title = pendingEventTitle
-            val millis = pendingEventMillis
-            if (title != null && millis != null) insertAssessmentEvent(title, millis)
+            pendingCalendarAction?.invoke()
         } else if (requestCode == 102) {
-            Toast.makeText(this, "نحتاج صلاحية التقويم لإضافة الموعد", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "يلزم منح صلاحية التقويم لإضافة الموعد", Toast.LENGTH_SHORT).show()
         }
-        pendingEventTitle = null
-        pendingEventMillis = null
+        pendingCalendarAction = null
     }
 
     private fun primaryCalendarId(): Long? {
@@ -269,13 +341,11 @@ class AssessmentsActivity : AppCompatActivity() {
         return null
     }
 
-    private fun insertAssessmentEvent(title: String, startMillis: Long) {
-        try {
-            val calId = primaryCalendarId()
-            if (calId == null) {
-                Toast.makeText(this, "ما قدرنا نلقى تقويم بالجهاز", Toast.LENGTH_SHORT).show()
-                return
-            }
+    private enum class InsertResult { ADDED, DUPLICATE, ERROR }
+
+    private fun insertCalendarEventGeneric(title: String, startMillis: Long, reminderDays: Int, location: String = ""): InsertResult {
+        return try {
+            val calId = primaryCalendarId() ?: return InsertResult.ERROR
             val existsCursor = contentResolver.query(
                 CalendarContract.Events.CONTENT_URI,
                 arrayOf(CalendarContract.Events._ID),
@@ -284,32 +354,53 @@ class AssessmentsActivity : AppCompatActivity() {
                 null
             )
             val alreadyExists = existsCursor?.use { it.count > 0 } ?: false
-            if (alreadyExists) {
-                Toast.makeText(this, "الموعد مضاف مسبقًا بالتقويم", Toast.LENGTH_SHORT).show()
-                return
-            }
+            if (alreadyExists) return InsertResult.DUPLICATE
 
             val values = ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, calId)
-                put(CalendarContract.Events.TITLE, "تسليم: $title")
+                put(CalendarContract.Events.TITLE, title)
                 put(CalendarContract.Events.DTSTART, startMillis)
                 put(CalendarContract.Events.DTEND, startMillis + 60 * 60 * 1000)
                 put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
+                if (location.isNotBlank()) put(CalendarContract.Events.EVENT_LOCATION, location)
             }
             val eventUri = contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
             val eventId = eventUri?.lastPathSegment?.toLongOrNull()
             if (eventId != null) {
-                // Reminder 7 days before the due date, as agreed.
                 val reminderValues = ContentValues().apply {
                     put(CalendarContract.Reminders.EVENT_ID, eventId)
-                    put(CalendarContract.Reminders.MINUTES, 7 * 24 * 60)
+                    put(CalendarContract.Reminders.MINUTES, reminderDays * 24 * 60)
                     put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
                 }
                 contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, reminderValues)
             }
-            Toast.makeText(this, "انضاف للتقويم ✅ (تذكير قبل أسبوع)", Toast.LENGTH_SHORT).show()
+            InsertResult.ADDED
         } catch (e: Exception) {
-            Toast.makeText(this, "صار خطأ بالإضافة للتقويم", Toast.LENGTH_SHORT).show()
+            InsertResult.ERROR
+        }
+    }
+
+    // SIS renders exam dates as "DD-MM-YYYY" with a separate 24h "HH:MM" time —
+    // same format already relied on by SisDashboardActivity's own exam calendar buttons.
+    private fun parseExamDateTime(dateStr: String, timeStr: String): Long? {
+        return try {
+            val parts = dateStr.trim().split("-")
+            if (parts.size != 3) return null
+            val day = parts[0].trim().toIntOrNull() ?: return null
+            val month = parts[1].trim().toIntOrNull() ?: return null
+            val year = parts[2].trim().toIntOrNull() ?: return null
+            var hour = 9
+            var minute = 0
+            if (timeStr.isNotBlank()) {
+                val tp = timeStr.trim().split(":")
+                hour = tp.getOrNull(0)?.trim()?.toIntOrNull() ?: 9
+                minute = tp.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
+            }
+            val cal = java.util.Calendar.getInstance()
+            cal.set(year, month - 1, day, hour, minute, 0)
+            cal.timeInMillis
+        } catch (e: Exception) {
+            null
         }
     }
 }
