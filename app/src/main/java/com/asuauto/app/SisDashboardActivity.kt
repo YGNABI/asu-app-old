@@ -29,7 +29,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 10
+    private val CACHE_VERSION = 11
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -326,8 +326,15 @@ class SisDashboardActivity : AppCompatActivity() {
                             // account, so a retry loop here actually made things worse, not
                             // better. If we land on a login page anyway (session somehow
                             // missing/expired), we report it clearly instead of retrying.
+                            // Use the Moodle SITE HOME page, not /my/ (Dashboard). The real
+                            // captured HTML this scraper was written against came from the
+                            // site home page (body id="page-site-index", title "Home | asulms"),
+                            // where the "My courses" cards are present in the initial HTML.
+                            // /my/ renders its "Course overview" cards via JavaScript after
+                            // load, so scraping it right after onPageFinished found 0 cards
+                            // every time — that, not the login flow, was the root cause.
                             phase = "moodleCourses"
-                            view.loadUrl("https://elearning.asu.edu.bh/my/")
+                            view.loadUrl("https://elearning.asu.edu.bh/?redirect=0")
                         }, 1200)
                     }
                     "moodleCourses" -> {
@@ -357,12 +364,12 @@ class SisDashboardActivity : AppCompatActivity() {
                                     val cardCount = diag.optInt("cardCount", -1)
                                     if (cardCount <= 0) {
                                         DebugLog.error(
-                                            "صفحة /my/ ما فيها بطاقات مواد — الرابط الفعلي: ${diag.optString("url")} | " +
+                                            "الصفحة الرئيسية لـ Moodle ما فيها بطاقات مواد — الرابط الفعلي: ${diag.optString("url")} | " +
                                                 "العنوان: ${diag.optString("title")} | مقتطف: ${diag.optString("bodySnippet")}"
                                         )
                                     }
                                 } catch (e: Exception) {
-                                    DebugLog.warn("تعذر قراءة تشخيص صفحة /my/: ${e.message}")
+                                    DebugLog.warn("تعذر قراءة تشخيص صفحة Moodle: ${e.message}")
                                 }
                                 view.evaluateJavascript("AndroidBridge.tbl('moodleCourses', scrapeMoodleCourses());", null)
                                 phase = "done"
@@ -546,7 +553,7 @@ class SisDashboardActivity : AppCompatActivity() {
         }
 
         if (moodleCourses.isEmpty()) {
-            DebugLog.error("ما انسحبت ولا مادة من Moodle (/my/) — تأكد من الدخول التلقائي لموقع التعليم الالكتروني")
+            DebugLog.error("ما انسحبت ولا مادة من الصفحة الرئيسية لـ Moodle — تأكد من الدخول التلقائي لموقع التعليم الالكتروني")
         } else {
             DebugLog.ok("مواد Moodle المسحوبة — ${moodleCourses.size} مادة")
             for (mc in moodleCourses) {

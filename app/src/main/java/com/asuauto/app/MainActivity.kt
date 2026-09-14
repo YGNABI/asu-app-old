@@ -186,7 +186,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnSisDashboard).setOnClickListener {
             pendingSisDashboardLaunch = true
             android.widget.Toast.makeText(this, "جاري تجهيز موقع التعليم الالكتروني...", android.widget.Toast.LENGTH_SHORT).show()
-            webView.loadUrl("https://elearning.asu.edu.bh/my/")
+            webView.loadUrl("https://elearning.asu.edu.bh/?redirect=0")
         }
     }
 
