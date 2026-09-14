@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
         val btnSisDashboard = findViewById<Button>(R.id.btnSisDashboard)
         val usernameInput = findViewById<EditText>(R.id.usernameInput)
         val passwordInput = findViewById<EditText>(R.id.passwordInput)
+        val togglePasswordVisibility = findViewById<ImageView>(R.id.togglePasswordVisibility)
         val biometricCheckbox = findViewById<CheckBox>(R.id.biometricCheckbox)
         val saveButton = findViewById<Button>(R.id.saveButton)
         val logoutTop = findViewById<TextView>(R.id.logoutTop)
@@ -121,6 +122,19 @@ class MainActivity : AppCompatActivity() {
             showLoggedInState()
         }
 
+        var passwordVisible = false
+        togglePasswordVisibility.setOnClickListener {
+            passwordVisible = !passwordVisible
+            if (passwordVisible) {
+                passwordInput.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                togglePasswordVisibility.setImageResource(android.R.drawable.ic_secure)
+            } else {
+                passwordInput.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                togglePasswordVisibility.setImageResource(android.R.drawable.ic_menu_view)
+            }
+            passwordInput.setSelection(passwordInput.text.length)
+        }
+
         webView = findViewById(R.id.webView)
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
@@ -176,9 +190,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<Button>(R.id.btnElearning).setOnClickListener {
-            webView.loadUrl("https://elearning.asu.edu.bh/login/index.php")
-        }
         findViewById<Button>(R.id.btnSos).setOnClickListener {
             webView.loadUrl("https://sos.asu.edu.bh/ords/r/asudss/sos/1")
         }
