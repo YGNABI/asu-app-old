@@ -52,16 +52,7 @@ object DashboardHtmlBuilder {
         else -> Pair("#EAF3DE", "#3B6D11")
     }
 
-    /**
-     * Gold if cumulative GPA > 92, silver if not but the most recent NON-summer
-     * semester's "Average" > 85. Summer terms are skipped when picking which
-     * semester's Average to check (per the user: summer doesn't count toward
-     * honor-roll eligibility) — but the cumulative GPA field itself is used
-     * as-is since it's a running total that already includes summer naturally.
-     * Returns null when neither threshold is met, so callers fall back to the
-     * existing warning-based color.
-     */
-    private fun honorRollColor(): Pair<String, String>? {
+    private fun honorRollClass(): String {
         val d = DataStore
         val cumGpa = d.f("studentGpa").toDoubleOrNull()
 
@@ -79,9 +70,9 @@ object DashboardHtmlBuilder {
         }
 
         return when {
-            cumGpa != null && cumGpa > 92.0 -> "#D4AF37" to "#ffffff"
-            semesterAvg != null && semesterAvg > 85.0 -> "#BFC1C2" to "#3a3a3a"
-            else -> null
+            cumGpa != null && cumGpa > 92.0 -> "card honor-gold"
+            semesterAvg != null && semesterAvg > 85.0 -> "card honor-silver"
+            else -> "card"
         }
     }
 
@@ -197,13 +188,14 @@ object DashboardHtmlBuilder {
         val d = DataStore
         val name = d.f("studentName").ifBlank { "الطالب" }
         val warning = d.f("studentWarning")
-        val (bg, fg) = if (warning.isBlank()) (honorRollColor() ?: warnColor(warning)) else warnColor(warning)
+        val (avatarBg, avatarFg) = warnColor(warning)
+        val cardClass = if (warning.isBlank()) honorRollClass() else "card"
         val initials = name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }
 
         val sb = StringBuilder()
-        sb.append("<div class='card'>")
+        sb.append("<div class='$cardClass'>")
         sb.append("<div style='display:flex;align-items:center;gap:12px'>")
-        sb.append("<div class='avatar' style='background:$bg;color:$fg'>${esc(initials)}</div>")
+        sb.append("<div class='avatar' style='background:$avatarBg;color:$avatarFg'>${esc(initials)}</div>")
         sb.append("<div><div class='big'>${esc(name)}</div><div class='muted'>${esc(d.f("studentCollege"))}</div></div></div>")
         sb.append("<div class='grid'>")
         sb.append(kvBox(t("المعدل التراكمي", "GPA"), d.f("studentGpa"), "toggleGpaChart()"))
@@ -221,7 +213,20 @@ object DashboardHtmlBuilder {
             sb.append("</div>")
         }
         sb.append("</div>")
-        sb.append(gpaChartOverlay(DataStore.gpaHistory))
+
+        val transcriptHistory = mutableListOf<Pair<String, Double>>()
+        for (row in d.transcript) {
+            if (row.size >= 2 && row[0] == "__TERM__") {
+                val text = row[1]
+                val gpa = Regex("GPA\\s+([\\d.]+)").find(text)?.groupValues?.get(1)?.toDoubleOrNull()
+                if (gpa != null) {
+                    var termName = text.substringBefore("Average").substringBefore("المعدل").trim()
+                    if (termName.length > 15) termName = termName.take(15) + ".."
+                    transcriptHistory.add(termName to gpa)
+                }
+            }
+        }
+        sb.append(gpaChartOverlay(transcriptHistory.reversed()))
 
         val cs = courses()
         if (cs.isEmpty()) {
@@ -275,20 +280,6 @@ object DashboardHtmlBuilder {
         return sb.toString()
     }
 
-    /**
-     * Persistent black-box panel: a single green checkmark when every
-     * DebugLog entry is OK, or the full recorded log (including the OK
-     * lines, for context) as soon as anything is a warning or error.
-     * Stays in the app — this is how "something's missing/wrong" gets
-     * diagnosed going forward instead of screenshotting a specific screen.
-     */
-    /**
-     * Builds the GPA-trend overlay (hidden by default, toggled via
-     * toggleGpaChart()) from the locally-accumulated history. A smooth
-     * Catmull-Rom curve, colored with a gradient that blends green where the
-     * GPA rose and red where it dropped between consecutive points — matching
-     * app colors, no hard color switch mid-line.
-     */
     private fun gpaChartOverlay(history: List<Pair<String, Double>>): String {
         val sb = StringBuilder()
         sb.append("<div id='gpaOv' class='ov' onclick=\"if(event.target===this) document.getElementById('gpaOv').classList.remove('show')\">")
@@ -299,7 +290,7 @@ object DashboardHtmlBuilder {
         sb.append("</div>")
 
         if (history.size < 2) {
-            sb.append("<div class='empty' style='padding:20px 4px'>${t("سنبدأ بتتبع تطور معدلك التراكمي من الفتحة القادمة للوحة", "We'll start tracking your GPA trend from the next time you open the dashboard")}</div>")
+            sb.append("<div class='empty' style='padding:20px 4px'>${t("لا توجد فصول سابقة كافية لرسم منحنى التطور", "Not enough past semesters to draw a trend curve")}</div>")
         } else {
             val w = 300.0; val h = 150.0; val padL = 30.0; val padR = 8.0; val padT = 10.0; val padB = 20.0
             val values = history.map { it.second }
@@ -346,41 +337,11 @@ object DashboardHtmlBuilder {
             }
             val labelIdxs = if (n <= 4) history.indices.toList() else listOf(0, n / 2, n - 1)
             for (i in labelIdxs) {
-                sb.append("<text x='${pts[i].first}' y='${h - 4}' font-size='8' fill='#999' text-anchor='middle'>${esc(history[i].first.substring(5))}</text>")
+                sb.append("<text x='${pts[i].first}' y='${h - 4}' font-size='8' fill='#999' text-anchor='middle'>${esc(history[i].first)}</text>")
             }
             sb.append("</svg>")
         }
         sb.append("</div></div>")
-        return sb.toString()
-    }
-
-    private fun debugBoxSection(): String {
-        val sb = StringBuilder()
-        val issues = DebugLog.hasIssues()
-        val borderColor = if (issues) "#A32D2D" else "#3B6D11"
-        sb.append("<div class='card' style='border:2px solid $borderColor;margin-bottom:10px'>")
-        if (!issues) {
-            sb.append("<div style='color:#3B6D11;font-weight:bold;font-size:13px'>✔ كل شي تمام</div>")
-        } else {
-            val errorCount = DebugLog.all().count { it.level == DebugLog.Level.ERROR }
-            val warnCount = DebugLog.all().count { it.level == DebugLog.Level.WARN }
-            sb.append("<div style='color:#A32D2D;font-weight:bold;font-size:13px;margin-bottom:8px'>")
-            sb.append("⚠ فيه $errorCount خطأ و$warnCount ملاحظة — التفاصيل:</div>")
-            for (e in DebugLog.all()) {
-                val color = when (e.level) {
-                    DebugLog.Level.OK -> "#3B6D11"
-                    DebugLog.Level.WARN -> "#854F0B"
-                    DebugLog.Level.ERROR -> "#A32D2D"
-                }
-                val icon = when (e.level) {
-                    DebugLog.Level.OK -> "✔"
-                    DebugLog.Level.WARN -> "⚠"
-                    DebugLog.Level.ERROR -> "✘"
-                }
-                sb.append("<div style='font-size:11px;color:$color;margin-bottom:3px;white-space:pre-wrap'>$icon ${esc(e.message)}</div>")
-            }
-        }
-        sb.append("</div>")
         return sb.toString()
     }
 
@@ -584,6 +545,10 @@ object DashboardHtmlBuilder {
         .page{display:none;padding:12px}
         .page.active{display:block}
         .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px}
+        .honor-gold{background:linear-gradient(135deg,#fcf4d9 0%,#e8c96b 50%,#d4af37 100%);border:1px solid #d4af37}
+        .honor-gold .muted,.honor-gold .lbl{color:#5a4a15 !important}
+        .honor-silver{background:linear-gradient(135deg,#f4f5f6 0%,#d5d7d9 50%,#aeb1b3 100%);border:1px solid #aeb1b3}
+        .honor-silver .muted,.honor-silver .lbl{color:#4a4d4f !important}
         .avatar{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold}
         .big{font-size:15px;font-weight:bold}
         .muted{font-size:12px;color:#888}
@@ -639,6 +604,7 @@ object DashboardHtmlBuilder {
         val calLbl = t("أضف للتقويم", "Add to Calendar")
         val calLblMid = t("أضف امتحان المنتصف للتقويم", "Add Midterm to Calendar")
         val calLblFin = t("أضف الامتحان النهائي للتقويم", "Add Final to Calendar")
+        val calLblExams = t("أضف مواعيد الامتحانات للتقويم", "Add Exams to Calendar")
         val materialsLbl = t("عرض المادة التعليمية", "View Course Materials")
         val assessmentsLbl = t("عرض الواجبات والبحوث", "View Assignments & Research")
         val lSection = t("الشعبة", "Section"); val lTeacher = t("المدرس", "Instructor")
@@ -647,7 +613,7 @@ object DashboardHtmlBuilder {
         val lMidExam = t("امتحان المنتصف", "Midterm Exam"); val lFinExam = t("الامتحان النهائي", "Final Exam")
         val lCode = t("رمز المقرر", "Course Code")
         return """
-        <script>var CALLBL="$calLbl",CALLBL_MID="$calLblMid",CALLBL_FIN="$calLblFin",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",ROOMLBL="${t("القاعة", "Room")}";</script>
+        <script>var CALLBL="$calLbl",CALLBL_MID="$calLblMid",CALLBL_FIN="$calLblFin",CALLBL_EXAMS="$calLblExams",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",ROOMLBL="${t("القاعة", "Room")}";</script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
         <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
@@ -694,8 +660,9 @@ object DashboardHtmlBuilder {
           document.getElementById('mme').textContent=c.md?(c.md+' — '+c.mt+(c.mr?' — '+c.mr:'')):'-';
           document.getElementById('mfe').textContent=c.fd?(c.fd+' — '+c.ft+(c.fr?' — '+c.fr:'')):'-';
           var btnsHtml='';
-          if(c.md) btnsHtml+="<span class='calBtn' onclick=\"addExamToCal('"+c.n+" - Midterm','"+c.md+"','"+c.mtr+"','"+c.mr+"')\">"+CALLBL_MID+"</span> ";
-          if(c.fd) btnsHtml+="<span class='calBtn' onclick=\"addExamToCal('"+c.n+" - Final','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+CALLBL_FIN+"</span>";
+          if(c.md || c.fd) {
+              btnsHtml+="<span class='calBtn' style='background:#1D9E75;color:#fff;display:block;text-align:center;padding:10px;font-size:13px;font-weight:bold;margin-bottom:8px' onclick=\"addAllExamsToCal('"+c.n+"','"+c.md+"','"+c.mtr+"','"+c.mr+"','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+CALLBL_EXAMS+"</span>";
+          }
           document.getElementById('mCalBtns').innerHTML=btnsHtml;
           var matHtml = c.mid ? "<span class='calBtn' onclick=\"openCourseMaterials('"+c.mid+"','"+c.n+"')\">"+MATERIALSLBL+"</span>" : '';
           document.getElementById('mMaterialsBtn').innerHTML = matHtml;
@@ -723,6 +690,12 @@ object DashboardHtmlBuilder {
         }
         function doLogout(){
           if(typeof AndroidBridge!=='undefined') AndroidBridge.logout();
+        }
+        function addAllExamsToCal(name, md, mtr, mr, fd, ftr, fr){
+          if(typeof AndroidBridge!=='undefined') {
+            if(md) AndroidBridge.addCalendarEvent(name + ' - Midterm', md, mtr, mr||'');
+            if(fd) AndroidBridge.addCalendarEvent(name + ' - Final', fd, ftr, fr||'');
+          }
         }
         function addExamToCal(name,date,time,room){
           if(typeof AndroidBridge!=='undefined') AndroidBridge.addCalendarEvent(name,date,time,room||'');
@@ -833,6 +806,6 @@ object DashboardHtmlBuilder {
         checkCurrentClass();
         setInterval(checkCurrentClass, 30000);
         </script></body></html>
-    """.trimIndent()
+        """.trimIndent()
     }
 }
