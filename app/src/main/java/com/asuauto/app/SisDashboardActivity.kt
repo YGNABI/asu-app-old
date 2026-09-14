@@ -29,7 +29,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 8
+    private val CACHE_VERSION = 9
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -321,8 +321,16 @@ class SisDashboardActivity : AppCompatActivity() {
                         view.postDelayed({
                             view.evaluateJavascript("AndroidBridge.tbl('account2', scrapeTableByLabel('تفاصيل كشف الحساب '));", null)
                             setStatus("جاري ربط المواد بموقع التعليم الالكتروني...")
-                            phase = "moodleLogin"
-                            view.loadUrl("https://elearning.asu.edu.bh/login/index.php")
+                            // Try the course list directly first — MainActivity already logs
+                            // the user into elearning.asu.edu.bh on app start, so the session
+                            // cookie usually already exists. Deliberately visiting the LOGIN
+                            // page while already authenticated is what was causing Moodle's
+                            // "You are already logged in as X, log out before logging in as a
+                            // different user?" interstitial — that page has no password field,
+                            // so the old code misread it as a successful login and moved on
+                            // with a broken/interrupted session, yielding 0 courses every time.
+                            phase = "moodleCourses"
+                            view.loadUrl("https://elearning.asu.edu.bh/my/")
                         }, 1200)
                     }
                     "moodleLogin" -> {
@@ -376,9 +384,35 @@ class SisDashboardActivity : AppCompatActivity() {
                         }
                     }
                     "moodleCourses" -> {
-                        view.evaluateJavascript("AndroidBridge.tbl('moodleCourses', scrapeMoodleCourses());", null)
-                        phase = "done"
-                        view.postDelayed({ buildAndShowDashboard() }, 300)
+                        view.evaluateJavascript("stillOnMoodleLogin();") { stillOnLogin ->
+                            if (stillOnLogin == "true") {
+                                // Genuinely not authenticated (no MainActivity session, or it
+                                // expired) — this is the ONLY place we go to the login page,
+                                // and only because /my/ itself redirected us to it.
+                                DebugLog.warn("ما فيه جلسة Moodle سارية — بنسوي تسجيل دخول")
+                                phase = "moodleLogin"
+                                view.loadUrl("https://elearning.asu.edu.bh/login/index.php")
+                                return@evaluateJavascript
+                            }
+                            view.evaluateJavascript(
+                                "document.title.indexOf('Log out') >= 0 || document.body.innerText.indexOf('log out before logging in') >= 0 ? 'true' : 'false';"
+                            ) { onLogoutInterstitial ->
+                                if (onLogoutInterstitial == "true") {
+                                    // The "already logged in as X, log out?" page — dismiss it
+                                    // by going to /my/ again (this only happened before when we
+                                    // hit the login page while already authenticated; kept here
+                                    // as a safety net in case some navigation still lands on it).
+                                    DebugLog.warn("طلعت صفحة \"مسجل دخول مسبقًا\" من Moodle — نعيد المحاولة")
+                                    phase = "moodleCourses"
+                                    view.loadUrl("https://elearning.asu.edu.bh/my/")
+                                } else {
+                                    DebugLog.ok("جلسة Moodle سارية بدون الحاجة لتسجيل دخول جديد")
+                                    view.evaluateJavascript("AndroidBridge.tbl('moodleCourses', scrapeMoodleCourses());", null)
+                                    phase = "done"
+                                    view.postDelayed({ buildAndShowDashboard() }, 300)
+                                }
+                            }
+                        }
                     }
                 }
             }
