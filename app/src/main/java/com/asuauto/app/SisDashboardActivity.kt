@@ -29,7 +29,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 7
+    private val CACHE_VERSION = 8
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -172,6 +172,8 @@ class SisDashboardActivity : AppCompatActivity() {
         }
     """.trimIndent()
 
+    private var moodleLoginAttempts = 0
+
     private fun startScraping() {
         phase = "login"
         sessionId = ""
@@ -179,6 +181,7 @@ class SisDashboardActivity : AppCompatActivity() {
         planLinks.clear()
         planNames.clear()
         rawTables.clear()
+        moodleLoginAttempts = 0
         DataStore.reset()
         DebugLog.reset()
 
@@ -327,34 +330,46 @@ class SisDashboardActivity : AppCompatActivity() {
                         val moodlePass = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("password", "") ?: ""
                         view.evaluateJavascript("stillOnMoodleLogin();") { stillOnLogin ->
                             if (stillOnLogin == "true") {
-                                // Still on the login page: fill and submit, but stay in
-                                // "moodleLogin" phase — the submit will trigger a redirect
-                                // whose own onPageFinished lands back in this same branch,
-                                // where we check again. Changing phase here (before we know
-                                // login actually succeeded) is what caused the previous bug:
-                                // the redirect page got misrouted into moodleCourses scraping
-                                // before /my/ had even loaded, yielding 0 courses every time.
-                                if (moodleUser.isNotBlank() && moodlePass.isNotBlank()) {
-                                    val js = """
-                                        (function() {
-                                            var u = document.querySelector('input[name="username"]');
-                                            var p = document.querySelector('input[name="password"]');
-                                            if (u && p) {
-                                                u.value = "$moodleUser"; p.value = "$moodlePass";
-                                                u.dispatchEvent(new Event('input',{bubbles:true}));
-                                                p.dispatchEvent(new Event('input',{bubbles:true}));
-                                                var b = document.querySelector('#loginbtn');
-                                                if (b) setTimeout(function(){ b.click(); }, 400);
-                                            }
-                                        })();
-                                    """.trimIndent()
-                                    view.evaluateJavascript(js, null)
-                                } else {
+                                if (moodleUser.isBlank() || moodlePass.isBlank()) {
                                     DebugLog.error("ما فيه بيانات دخول محفوظة لموقع التعليم الالكتروني")
+                                    phase = "done"
+                                    view.postDelayed({ buildAndShowDashboard() }, 300)
+                                    return@evaluateJavascript
                                 }
-                                // phase stays "moodleLogin" — wait for the redirect.
+                                moodleLoginAttempts++
+                                if (moodleLoginAttempts > 3) {
+                                    // Capped so a wrong/rejected password (or a login form the
+                                    // auto-fill JS can't actually submit) can't loop silently
+                                    // until the 60s global timeout swallows the real reason.
+                                    DebugLog.error("فشل تسجيل الدخول لموقع التعليم الالكتروني (Moodle) بعد 3 محاولات — تحقق من كلمة السر أو شكل نموذج الدخول")
+                                    phase = "done"
+                                    view.postDelayed({ buildAndShowDashboard() }, 300)
+                                    return@evaluateJavascript
+                                }
+                                DebugLog.warn("محاولة دخول Moodle رقم $moodleLoginAttempts — لسا بصفحة الدخول")
+                                val js = """
+                                    (function() {
+                                        var u = document.querySelector('input[name="username"]');
+                                        var p = document.querySelector('input[name="password"]');
+                                        if (u && p) {
+                                            u.value = "$moodleUser"; p.value = "$moodlePass";
+                                            u.dispatchEvent(new Event('input',{bubbles:true}));
+                                            p.dispatchEvent(new Event('input',{bubbles:true}));
+                                            u.dispatchEvent(new Event('change',{bubbles:true}));
+                                            p.dispatchEvent(new Event('change',{bubbles:true}));
+                                            var f = u.closest('form');
+                                            var b = document.querySelector('#loginbtn');
+                                            setTimeout(function(){
+                                                if (b) { b.click(); }
+                                                else if (f) { f.submit(); }
+                                            }, 500);
+                                        }
+                                    })();
+                                """.trimIndent()
+                                view.evaluateJavascript(js, null)
+                                // phase stays "moodleLogin" — wait for the redirect and re-check.
                             } else {
-                                // Actually logged in now (or was already) — safe to move on.
+                                DebugLog.ok("تسجيل الدخول لـ Moodle نجح (محاولة $moodleLoginAttempts)")
                                 phase = "moodleCourses"
                                 view.loadUrl("https://elearning.asu.edu.bh/my/")
                             }
