@@ -191,7 +191,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnSos).setOnClickListener {
-            webView.loadUrl("https://sos.asu.edu.bh/ords/r/asudss/sos/1")
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://sos.asu.edu.bh/ords/r/asudss/sos/1"))
+            startActivity(intent)
         }
 
         findViewById<Button>(R.id.btnSisDashboard).setOnClickListener {

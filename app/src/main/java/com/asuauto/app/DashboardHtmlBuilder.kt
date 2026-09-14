@@ -516,13 +516,14 @@ object DashboardHtmlBuilder {
         val calLblMid = t("أضف امتحان المنتصف للتقويم", "Add Midterm to Calendar")
         val calLblFin = t("أضف الامتحان النهائي للتقويم", "Add Final to Calendar")
         val materialsLbl = t("عرض المادة التعليمية", "View Course Materials")
+        val assessmentsLbl = t("عرض الواجبات والبحوث", "View Assignments & Research")
         val lSection = t("الشعبة", "Section"); val lTeacher = t("المدرس", "Instructor")
         val lMidGrade = t("علامة المنتصف", "Midterm Grade"); val lWork = t("أعمال أخرى", "Other Work")
         val lFinGrade = t("علامة الامتحان النهائي", "Final Exam Grade"); val lTotal = t("المجموع", "Total")
         val lMidExam = t("امتحان المنتصف", "Midterm Exam"); val lFinExam = t("الامتحان النهائي", "Final Exam")
         val lCode = t("رمز المقرر", "Course Code")
         return """
-        <script>var CALLBL="$calLbl",CALLBL_MID="$calLblMid",CALLBL_FIN="$calLblFin",MATERIALSLBL="$materialsLbl";</script>
+        <script>var CALLBL="$calLbl",CALLBL_MID="$calLblMid",CALLBL_FIN="$calLblFin",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl";</script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
         <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
@@ -537,6 +538,7 @@ object DashboardHtmlBuilder {
         <div class='kv'><span>$lFinExam</span><span id='mfe'></span></div>
         <div id='mCalBtns'></div>
         <div id='mMaterialsBtn'></div>
+        <div id='mAssessmentsBtn'></div>
         </div></div>
         <div class='ov' id='gov' onclick="if(event.target===this)cgm()">
         <div class='modal'>
@@ -573,6 +575,8 @@ object DashboardHtmlBuilder {
           document.getElementById('mCalBtns').innerHTML=btnsHtml;
           var matHtml = c.mid ? "<span class='calBtn' onclick=\"openCourseMaterials('"+c.mid+"','"+c.n+"')\">"+MATERIALSLBL+"</span>" : '';
           document.getElementById('mMaterialsBtn').innerHTML = matHtml;
+          var assHtml = c.mid ? "<span class='calBtn' onclick=\"openCourseAssessments('"+c.mid+"','"+c.n+"')\">"+ASSESSMENTSLBL+"</span>" : '';
+          document.getElementById('mAssessmentsBtn').innerHTML = assHtml;
           document.getElementById('ov').classList.add('show');
         }
         function openGrade(k){
@@ -604,6 +608,9 @@ object DashboardHtmlBuilder {
         }
         function openCourseMaterials(moodleId,courseName){
           if(typeof AndroidBridge!=='undefined') AndroidBridge.openCourseMaterials(moodleId,courseName);
+        }
+        function openCourseAssessments(moodleId,courseName){
+          if(typeof AndroidBridge!=='undefined') AndroidBridge.openCourseAssessments(moodleId,courseName);
         }
         function fg(el,m){
           el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
