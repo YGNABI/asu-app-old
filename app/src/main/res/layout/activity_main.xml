@@ -49,9 +49,11 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
+        <!-- تم جعل خلفية الشعار شفافة تماماً لتتلائم مع الوضع الداكن -->
         <ImageView
             android:id="@+id/logoImage"
             android:src="@drawable/asu_logo"
+            android:background="@android:color/transparent"
             android:contentDescription="ASU Logo"
             android:layout_width="96dp"
             android:layout_height="96dp" />
@@ -74,13 +76,15 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
+        <!-- حقل الرقم الجامعي مع ألوان واضحة ومقروءة للوضع الداكن -->
         <EditText
             android:id="@+id/usernameInput"
             android:hint="الرقم الجامعي"
             android:background="@android:drawable/edit_text"
+            android:backgroundTint="#333333"
             android:padding="12dp"
-            android:textColor="?android:attr/textColorPrimary"
-            android:textColorHint="?android:attr/textColorSecondary"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#B0B0B0"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
@@ -89,15 +93,17 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content">
 
+            <!-- حقل كلمة السر مع ألوان واضحة ومقروءة للوضع الداكن -->
             <EditText
                 android:id="@+id/passwordInput"
                 android:hint="كلمة السر"
                 android:inputType="textPassword"
                 android:background="@android:drawable/edit_text"
+                android:backgroundTint="#333333"
                 android:padding="12dp"
                 android:paddingEnd="44dp"
-                android:textColor="?android:attr/textColorPrimary"
-                android:textColorHint="?android:attr/textColorSecondary"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#B0B0B0"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
 
