@@ -182,11 +182,17 @@ object DashboardHtmlBuilder {
             sb.append("📶❌ وضع عدم الاتصال — آخر تحديث: $lastUpdate")
             sb.append("</div>")
         }
-        sb.append("<div id='refreshSpinner' style='display:none;text-align:center;padding:10px;'><div class='spinner'></div></div>")
+        sb.append("<div id='pullToRefreshContainer' style='display:none; text-align:center; padding:15px 0; overflow:hidden;'>")
+        sb.append("<div class='logo-loader'>")
+        sb.append("<img src='file:///android_res/drawable/asu_logo.png' class='logo-bg' />")
+        sb.append("<img src='file:///android_res/drawable/asu_logo.png' class='logo-color' id='logoFill' />")
+        sb.append("</div></div>")
+        sb.append("<div id='pageContentWrapper'>")
         sb.append("<div id='home' class='page active'>").append(home()).append("</div>")
         sb.append("<div id='plan' class='page'>").append(plan()).append("</div>")
         sb.append("<div id='grades' class='page'>").append(grades()).append("</div>")
         sb.append("<div id='account' class='page'>").append(account()).append("</div>")
+        sb.append("</div>")
         sb.append(SCRIPT())
         return sb.toString()
     }
@@ -613,8 +619,9 @@ object DashboardHtmlBuilder {
         .activeBannerText{width:100%;padding-top:6px}
         .activeBannerCourse{font-size:12px;color:#cbd3da}
         .activeBannerRoom{font-size:18px;font-weight:bold;margin-top:2px}
-        .spinner {border:4px solid rgba(0,0,0,0.1);width:30px;height:30px;border-radius:50%;border-left-color:#3498db;animation:spin 1s linear infinite;margin:0 auto;}
-        @keyframes spin {0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
+        .logo-loader { position: relative; width: 64px; height: 64px; margin: 0 auto; border-radius: 50%; overflow: hidden; background: #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .logo-bg { width: 100%; height: 100%; object-fit: contain; filter: grayscale(100%) opacity(20%); position: absolute; top: 0; left: 0; }
+        .logo-color { width: 100%; height: 100%; object-fit: contain; position: absolute; top: 0; left: 0; clip-path: inset(100% 0 0 0); transition: clip-path 0.1s ease-out; }
         </style></head><body>
         <div class="tabs">
         <div class="tab active" onclick="sp(this,'home')">${t("الرئيسية", "Home")}</div>
@@ -665,14 +672,57 @@ object DashboardHtmlBuilder {
         <div class='kv'><span>$lTotal</span><span id='gmtotal'></span></div>
         </div></div>
         <script>
-        var startY=0;
-        document.body.addEventListener('touchstart',function(e){if(window.scrollY<=0)startY=e.touches[0].clientY;},{passive:true});
-        document.body.addEventListener('touchend',function(e){
-          if(window.scrollY<=0 && startY>0 && e.changedTouches[0].clientY-startY>90){
-            document.getElementById('refreshSpinner').style.display='block';
-            if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
-          }
+        var startY = null;
+        var currentY = 0;
+        var pullThreshold = 250; 
+        var pullContainer = document.getElementById('pullToRefreshContainer');
+        var pageContent = document.getElementById('pageContentWrapper');
+        var logoFill = document.getElementById('logoFill');
+
+        document.body.addEventListener('touchstart', function(e) {
+            if (window.scrollY <= 0) {
+                startY = e.touches[0].clientY;
+                pageContent.style.transition = 'none';
+                logoFill.style.transition = 'none';
+            }
+        }, {passive: true});
+
+        document.body.addEventListener('touchmove', function(e) {
+            if (startY === null) return;
+            var dy = e.touches[0].clientY - startY;
+            if (window.scrollY <= 0 && dy > 0) {
+                currentY = dy;
+                var pullDistance = Math.min(dy * 0.4, pullThreshold * 0.8);
+                pullContainer.style.display = 'block';
+                pageContent.style.transform = 'translateY(' + pullDistance + 'px)';
+                
+                var fillPercent = Math.min(100, (dy / pullThreshold) * 100);
+                logoFill.style.clipPath = 'inset(' + (100 - fillPercent) + '% 0 0 0)';
+            }
+        }, {passive: true});
+
+        document.body.addEventListener('touchend', function(e) {
+            if (startY === null) return;
+            pageContent.style.transition = 'transform 0.3s ease-out';
+            logoFill.style.transition = 'clip-path 0.3s ease-out';
+            
+            if (currentY > pullThreshold) {
+                logoFill.style.clipPath = 'inset(0% 0 0 0)';
+                if (typeof AndroidBridge !== 'undefined') AndroidBridge.refresh();
+                
+                setTimeout(function() {
+                    pageContent.style.transform = 'translateY(0px)';
+                    pullContainer.style.display = 'none';
+                }, 800);
+            } else {
+                pageContent.style.transform = 'translateY(0px)';
+                logoFill.style.clipPath = 'inset(100% 0 0 0)';
+                setTimeout(function() { pullContainer.style.display = 'none'; }, 300);
+            }
+            startY = null;
+            currentY = 0;
         });
+
         function sp(el,id){
           document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
           document.getElementById(id).classList.add('active');
