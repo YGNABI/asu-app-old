@@ -49,7 +49,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
-        <!-- تم جعل خلفية الشعار شفافة تماماً لتتلائم مع الوضع الداكن -->
         <ImageView
             android:id="@+id/logoImage"
             android:src="@drawable/asu_logo"
@@ -76,7 +75,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
-        <!-- حقل الرقم الجامعي مع ألوان واضحة ومقروءة للوضع الداكن -->
         <EditText
             android:id="@+id/usernameInput"
             android:hint="الرقم الجامعي"
@@ -93,7 +91,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content">
 
-            <!-- حقل كلمة السر مع ألوان واضحة ومقروءة للوضع الداكن -->
             <EditText
                 android:id="@+id/passwordInput"
                 android:hint="كلمة السر"
