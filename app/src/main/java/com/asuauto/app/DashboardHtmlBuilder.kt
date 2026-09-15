@@ -178,9 +178,11 @@ object DashboardHtmlBuilder {
     fun build(): String {
         val sb = StringBuilder()
         sb.append(HEAD())
-        sb.append("<div id='pullIndicator'><svg id='pullSvg' viewBox='0 0 100 0' preserveAspectRatio='none'><path id='pullPath' d='M0,0 L100,0 L100,0 Q50,0 0,0 Z' fill='#2c3e50'/></svg>")
-        sb.append("<img id='pullLogoImg' src='data:image/jpeg;base64,$pullLogoBase64' style='position:absolute;top:14px;left:50%;transform:translateX(-50%) scale(0.75);opacity:0;width:110px;pointer-events:none'/>")
+        // حاوية صورة التحديث الجمالية الجديدة
+        sb.append("<div id='pullIndicator' style='height:0; overflow:hidden; position:relative;'>")
+        sb.append("<img src='data:image/jpeg;base64,$pullLogoBase64' style='position:absolute; bottom:0; left:0; width:100%; height:220px; object-fit:cover; opacity:0.7;'/>")
         sb.append("</div>")
+        
         sb.append("<div id='scrollWrap'>")
         sb.append("<div id='offlineBanner' style='display:none;background:#e74c3c;color:#fff;text-align:center;padding:6px;font-size:12px;font-weight:bold;position:sticky;top:43px;z-index:10'>")
         sb.append("<span id='offlineBannerText'></span>")
@@ -206,7 +208,7 @@ object DashboardHtmlBuilder {
         val initials = name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }
         var avatarUrl = d.f("studentAvatar")
         
-        if (avatarUrl.isNotBlank() && !avatarUrl.startsWith("http")) {
+        if (avatarUrl.isNotBlank() && !avatarUrl.startsWith("http") && !avatarUrl.startsWith("data:")) {
             avatarUrl = "https://sis.asu.edu.bh/$avatarUrl"
         }
 
@@ -335,18 +337,14 @@ object DashboardHtmlBuilder {
             for (s in 0..steps) {
                 val v = minV + (span * s / steps)
                 val y = yAt(v)
-                sb.append("<line x1='$padL' y1='$y' x2='${dynamicWidth - padR}' y2='$y' stroke='#dcdcdc' stroke-width='1'/>")
-                sb.append("<text x='${padL - 6}' y='${y + 4}' font-size='11' fill='#555' font-weight='bold' text-anchor='end'>${v.toInt()}</text>")
+                sb.append("<line x1='$padL' y1='$y' x2='${dynamicWidth - padR}' y2='$y' stroke='var(--chart-grid)' stroke-width='1'/>")
+                sb.append("<text x='${padL - 6}' y='${y + 4}' font-size='11' fill='var(--chart-text)' font-weight='bold' text-anchor='end'>${v.toInt()}</text>")
             }
-            sb.append("<line x1='$padL' y1='$padT' x2='$padL' y2='${h - padB}' stroke='#444' stroke-width='2'/>")
-            sb.append("<line x1='$padL' y1='${h - padB}' x2='${dynamicWidth - padR}' y2='${h - padB}' stroke='#444' stroke-width='2'/>")
+            sb.append("<line x1='$padL' y1='$padT' x2='$padL' y2='${h - padB}' stroke='var(--chart-axis)' stroke-width='2'/>")
+            sb.append("<line x1='$padL' y1='${h - padB}' x2='${dynamicWidth - padR}' y2='${h - padB}' stroke='var(--chart-axis)' stroke-width='2'/>")
 
             val pts = history.mapIndexed { i, pair -> xAt(i) to yAt(pair.second) }
 
-            // Smooth Catmull-Rom-to-Bezier curve instead of straight segments,
-            // with a gradient stroke that blends green where the GPA rose and
-            // red where it dropped — a real color transition along the line,
-            // not a hard switch at each point.
             val path = StringBuilder("M${pts[0].first},${pts[0].second} ")
             for (i in 0 until pts.size - 1) {
                 val p0 = pts.getOrElse(i - 1) { pts[i] }
@@ -379,7 +377,7 @@ object DashboardHtmlBuilder {
             history.forEachIndexed { i, pair ->
                 val px = pts[i].first
                 val py = h - padB + 16
-                sb.append("<text x='$px' y='$py' font-size='11' fill='#222' font-weight='bold' text-anchor='end' transform='rotate(-35,$px,$py)'>${esc(pair.first)}</text>")
+                sb.append("<text x='$px' y='$py' font-size='11' fill='var(--chart-text)' font-weight='bold' text-anchor='end' transform='rotate(-35,$px,$py)'>${esc(pair.first)}</text>")
             }
             sb.append("</svg></div>")
         }
@@ -580,8 +578,18 @@ object DashboardHtmlBuilder {
         <html dir="$dir" lang="$langCode"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
+        :root {
+            --chart-text: #222;
+            --chart-grid: #dcdcdc;
+            --chart-axis: #444;
+        }
         body{font-family:sans-serif;background:#f2f3f5;color:#1a1a1a;margin:0}
         @media (prefers-color-scheme: dark) {
+            :root {
+                --chart-text: #e0e0e0;
+                --chart-grid: #444;
+                --chart-axis: #888;
+            }
             body { background:#121212 !important; color:#e0e0e0 !important; }
             .card, .list, .pcard, .modal { background:#1e1e1e !important; color:#e0e0e0 !important; }
             .row, .arow { background:#1e1e1e !important; border-bottom-color:#2c2c2c !important; }
@@ -595,7 +603,7 @@ object DashboardHtmlBuilder {
         .tab{flex:1;text-align:center;padding:12px 2px;color:#fff;font-size:12px;cursor:pointer}
         .tab.active{background:#34495e;border-bottom:3px solid #3498db}
         .page{width:25%;flex-shrink:0;padding:12px;box-sizing:border-box}
-        #pagesContainer{display:flex;transition:transform 0.3s ease-out;width:400%}
+        #pagesContainer{display:flex;transition:transform 0.3s ease-out, height 0.3s ease-out;width:400%; align-items:flex-start; overflow:hidden;}
         .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px}
         .honor-gold{background:linear-gradient(135deg,#fcf4d9 0%,#e8c96b 50%,#d4af37 100%) !important;border:1px solid #d4af37;color:#333 !important}
         .honor-gold .muted,.honor-gold .lbl{color:#5a4a15 !important}
@@ -646,8 +654,6 @@ object DashboardHtmlBuilder {
         .activeBannerRoom{font-size:18px;font-weight:bold;margin-top:2px}
         .spinner {border:4px solid rgba(0,0,0,0.1);width:30px;height:30px;border-radius:50%;border-left-color:#3498db;animation:spin 1s linear infinite;margin:0 auto;}
         @keyframes spin {0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
-        #pullIndicator{position:relative;overflow:hidden;height:0}
-        #pullSvg{display:block;width:100%}
         #scrollWrap{position:relative;overflow-x:hidden}
         </style></head><body>
         <div class="tabs">
@@ -717,43 +723,34 @@ object DashboardHtmlBuilder {
         var isPulling=false;
         var scrollWrap=document.getElementById('scrollWrap');
         var pullIndicator=document.getElementById('pullIndicator');
-        var pullSvg=document.getElementById('pullSvg');
-        var pullPath=document.getElementById('pullPath');
-        var pullLogoImg=document.getElementById('pullLogoImg');
-        var PULL_MAX=160;
+        var PULL_MAX=220;
 
         var PAGE_ORDER=['home','plan','grades','account'];
         var currentPageIndex=0;
         var pagesContainer=document.getElementById('pagesContainer');
         var startX=0;
         var currentX=0;
-        var gesture=null; // null | 'vertical' | 'horizontal'
+        var gesture=null;
 
         function updatePullVisual(pullDist){
-          // Exponential ease instead of a flat 0.4 multiplier — tracks the
-          // finger closely at first (feels responsive, not heavy) and only
-          // resists as it nears the max, instead of feeling capped/laggy
-          // the whole way.
           var eased = PULL_MAX * (1 - Math.exp(-pullDist / (PULL_MAX * 0.9)));
-          var h=eased;
-          var bow=h*0.55;
-          var total=h+bow;
-          pullIndicator.style.height=total+'px';
-          pullSvg.setAttribute('viewBox','0 0 100 '+total);
-          pullSvg.style.height=total+'px';
-          pullPath.setAttribute('d','M0,0 L100,0 L100,'+h+' Q50,'+total+' 0,'+h+' Z');
-          var ratio=Math.min(eased/PULL_MAX,1);
-          pullLogoImg.style.opacity=(ratio*0.85).toString();
-          pullLogoImg.style.transform='translateX(-50%) scale('+(0.75+ratio*0.35)+')';
+          pullIndicator.style.height=eased+'px';
           return eased;
+        }
+
+        function resizeContainer() {
+          var activePage = document.getElementById(PAGE_ORDER[currentPageIndex]);
+          if(activePage) pagesContainer.style.height = activePage.offsetHeight + 'px';
         }
 
         function setActivePage(index, animate){
           currentPageIndex=index;
-          pagesContainer.style.transition = animate ? 'transform 0.3s ease-out' : 'none';
-          pagesContainer.style.transform = 'translateX(' + (index * 25) + '%)';
+          pagesContainer.style.transition = animate ? 'transform 0.3s ease-out, height 0.3s ease-out' : 'none';
+          var sign = document.dir === 'rtl' ? 1 : -1;
+          pagesContainer.style.transform = 'translateX(' + (sign * index * 25) + '%)';
           document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
           document.getElementById(PAGE_ORDER[index]).classList.add('active');
+          resizeContainer();
           document.querySelectorAll('.tab').forEach(function(t,i){
             t.classList.toggle('active', i===index);
           });
@@ -767,7 +764,7 @@ object DashboardHtmlBuilder {
           startX=e.touches[0].clientX;
           startY=e.touches[0].clientY;
           gesture=null;
-          scrollWrap.style.transition='none';
+          pullIndicator.style.transition='none';
           pagesContainer.style.transition='none';
         },{passive:true});
 
@@ -786,20 +783,15 @@ object DashboardHtmlBuilder {
             if(dy > 0){
               isPulling=true;
               currentY=dy;
-              var eased=updatePullVisual(currentY);
-              scrollWrap.style.transform='translateY('+eased+'px)';
+              updatePullVisual(currentY);
             }
           } else if(gesture==='horizontal'){
-            // pagesContainer is 400% wide (4 pages x 25% each). In this RTL
-            // layout, page 0 (home) sits at the right edge by default, and
-            // moving to a later page needs a POSITIVE translateX (in steps
-            // of 25%, not 100%, since that's this container's own width).
-            var atFirst = currentPageIndex===0 && dx>0;
-            var atLast = currentPageIndex===PAGE_ORDER.length-1 && dx<0;
-            var damp = (atFirst || atLast) ? 0.3 : 1;
+            var sign = document.dir === 'rtl' ? 1 : -1;
+            var isOverscroll = (currentPageIndex===0 && dx*sign < 0) || (currentPageIndex===PAGE_ORDER.length-1 && dx*sign > 0);
+            var damp = isOverscroll ? 0.3 : 1;
             currentX = dx * damp;
-            var basePercent = currentPageIndex*25;
-            var dragPercent = -(currentX / window.innerWidth) * 25;
+            var basePercent = sign * currentPageIndex * 25;
+            var dragPercent = (currentX / window.innerWidth) * 25;
             pagesContainer.style.transform = 'translateX(' + (basePercent + dragPercent) + '%)';
           }
         },{passive:true});
@@ -807,10 +799,8 @@ object DashboardHtmlBuilder {
         document.addEventListener('touchend',function(e){
           if(gesture==='ignore'){ gesture=null; return; }
           if(gesture==='vertical' && isPulling) {
-            scrollWrap.style.transition='transform 0.45s cubic-bezier(.22,.68,0,1.2)';
-            scrollWrap.style.transform='translateY(0px)';
-            pullIndicator.style.transition='height 0.45s cubic-bezier(.22,.68,0,1.2)';
-            updatePullVisual(0);
+            pullIndicator.style.transition='height 0.4s ease';
+            pullIndicator.style.height='0px';
             if(currentY>160){
               document.getElementById('refreshSpinner').style.display='block';
               if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
@@ -818,8 +808,9 @@ object DashboardHtmlBuilder {
           } else if(gesture==='horizontal'){
             var threshold=window.innerWidth*0.18;
             var nextIndex=currentPageIndex;
-            if(currentX < -threshold && currentPageIndex < PAGE_ORDER.length-1) nextIndex++;
-            else if(currentX > threshold && currentPageIndex > 0) nextIndex--;
+            var sign = document.dir === 'rtl' ? 1 : -1;
+            if(currentX * sign > threshold && currentPageIndex < PAGE_ORDER.length-1) nextIndex++;
+            else if(currentX * sign < -threshold && currentPageIndex > 0) nextIndex--;
             setActivePage(nextIndex, true);
           }
           startY=0;
@@ -882,6 +873,7 @@ object DashboardHtmlBuilder {
           el.classList.add('active');
           document.querySelectorAll('.p-reg').forEach(function(x){x.style.display=(m==='reg')?'block':'none'});
           document.querySelectorAll('.p-all').forEach(function(x){x.style.display=(m==='all')?'block':'none'});
+          setTimeout(resizeContainer, 50);
         }
         function addAllExamsToCal(name, md, mtr, mr, fd, ftr, fr){
           if(typeof AndroidBridge!=='undefined') {
@@ -900,6 +892,7 @@ object DashboardHtmlBuilder {
           el.classList.add('active');
           var isSem = (m==='sem');
           document.querySelectorAll('#grades .term').forEach(function(t){t.style.display=isSem?'block':'none'});
+          setTimeout(resizeContainer, 50);
         }
         (function(){
           var chips=document.querySelectorAll('#grades .chip');
@@ -925,10 +918,12 @@ object DashboardHtmlBuilder {
           });
           var empty=document.getElementById('accEmpty');
           if(empty)empty.style.display=(visible===0)?'block':'none';
+          setTimeout(resizeContainer, 50);
         }
         (function(){
           var c=document.querySelector('#account .chip');
           if(c)fa(c,'recent');
+          setTimeout(resizeContainer, 150);
         })();
 
         function toggleGpaChart(){
