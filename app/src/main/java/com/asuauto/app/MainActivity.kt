@@ -233,7 +233,6 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             pendingSisDashboardLaunch = true
-            android.widget.Toast.makeText(this, "جاري التحقق من الحساب...", android.widget.Toast.LENGTH_SHORT).show()
             webView.loadUrl("https://elearning.asu.edu.bh/?redirect=0")
         }
     }
