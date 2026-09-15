@@ -30,7 +30,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 13
+    private val CACHE_VERSION = 14
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -358,36 +358,6 @@ class SisDashboardActivity : AppCompatActivity() {
         }
     }
 
-    private fun recordGpaSnapshot(): List<Pair<String, Double>> {
-        val gpa = DataStore.f("studentGpa").toDoubleOrNull() ?: return loadGpaHistory()
-        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-        val history = loadGpaHistory().toMutableList()
-        val todayIdx = history.indexOfFirst { it.first == today }
-        if (todayIdx >= 0) history[todayIdx] = today to gpa else history.add(today to gpa)
-        val trimmed = history.takeLast(200)
-        val arr = JSONArray()
-        for ((d, g) in trimmed) {
-            arr.put(org.json.JSONObject().apply { put("d", d); put("g", g) })
-        }
-        getSharedPreferences("asu_prefs", MODE_PRIVATE).edit().putString("gpa_history", arr.toString()).apply()
-        return trimmed
-    }
-
-    private fun loadGpaHistory(): List<Pair<String, Double>> {
-        val raw = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("gpa_history", null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(raw)
-            (0 until arr.length()).mapNotNull { i ->
-                val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                val d = o.optString("d")
-                val g = o.optDouble("g", Double.NaN)
-                if (d.isBlank() || g.isNaN()) null else d to g
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
     private fun nextPlanDetail(view: WebView) {
         if (planIndex < planLinks.size) {
             setStatus("جاري جلب الخطة (${planIndex + 1}/${planLinks.size})...")
@@ -510,10 +480,13 @@ class SisDashboardActivity : AppCompatActivity() {
         fun openOutlook(instructorName: String, courseName: String) {
             runOnUiThread {
                 try {
-                    val intent = packageManager.getLaunchIntentForPackage("com.microsoft.office.outlook")
-                    if (intent != null) {
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(intent)
+                    val emailIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "message/rfc822"
+                        putExtra(Intent.EXTRA_EMAIL, arrayOf(instructorName))
+                        setPackage("com.microsoft.office.outlook")
+                    }
+                    if (emailIntent.resolveActivity(packageManager) != null) {
+                        startActivity(emailIntent)
                     } else {
                         android.widget.Toast.makeText(
                             this@SisDashboardActivity,
@@ -599,8 +572,6 @@ class SisDashboardActivity : AppCompatActivity() {
         DataStore.moodleCourses = moodleCourses
         DataStore.moodleCourseMap = MoodleCourseMatcher.match(DataStore.registration, moodleCourses)
 
-        DataStore.gpaHistory = recordGpaSnapshot()
-
         DashboardHtmlBuilder.LANG = prefs.getString("lang", "ar") ?: "ar"
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).putInt("version", CACHE_VERSION).apply()
@@ -637,7 +608,25 @@ class SisDashboardActivity : AppCompatActivity() {
             val startMillis = cal.timeInMillis
             val endMillis = startMillis + 60 * 60 * 1000
 
-            val calId = primaryCalendarId() ?: return
+            val calId = primaryCalendarId()
+            if (calId == null) {
+                android.widget.Toast.makeText(this, "تعذّر العثور على تقويم في الجهاز", android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val existsCursor = contentResolver.query(
+                android.provider.CalendarContract.Events.CONTENT_URI,
+                arrayOf(android.provider.CalendarContract.Events._ID),
+                "${android.provider.CalendarContract.Events.TITLE} = ? AND ${android.provider.CalendarContract.Events.DTSTART} = ?",
+                arrayOf(title, startMillis.toString()),
+                null
+            )
+            val alreadyExists = existsCursor?.use { it.count > 0 } ?: false
+            if (alreadyExists) {
+                android.widget.Toast.makeText(this, "الموعد مضاف مسبقًا إلى التقويم", android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+
             val values = android.content.ContentValues().apply {
                 put(android.provider.CalendarContract.Events.DTSTART, startMillis)
                 put(android.provider.CalendarContract.Events.DTEND, endMillis)
@@ -647,7 +636,10 @@ class SisDashboardActivity : AppCompatActivity() {
                 put(android.provider.CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
             }
             contentResolver.insert(android.provider.CalendarContract.Events.CONTENT_URI, values)
-        } catch (e: Exception) {}
+            android.widget.Toast.makeText(this, "تمت الإضافة إلى التقويم ✅", android.widget.Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(this, "حدث خطأ أثناء الإضافة إلى التقويم", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun primaryCalendarId(): Long? {
