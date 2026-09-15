@@ -337,7 +337,6 @@ object DashboardHtmlBuilder {
                 sb.append("<circle cx='${p.first}' cy='${p.second}' r='6' fill='$dotColor' stroke='#fff' stroke-width='2'/>")
             }
 
-            // أسماء الفصول بخط واضح ومقروء بصيغة الفصل 1/2026 بخط كبير وواضح
             history.forEachIndexed { i, pair ->
                 val px = pts[i].first
                 val py = h - padB + 16
@@ -806,4 +805,29 @@ object DashboardHtmlBuilder {
 
         (function(){
           var banner=document.getElementById('activeBanner');
-          ...
+          if(!banner) return;
+          var startY=null, currentY=0;
+          banner.addEventListener('touchstart',function(e){
+            startY=e.touches[0].clientY; currentY=0;
+          },{passive:true});
+          banner.addEventListener('touchmove',function(e){
+            if(startY===null) return;
+            var dy=e.touches[0].clientY-startY;
+            if(dy>0){ currentY=dy; banner.style.transform='translateY('+dy+'px)'; }
+          },{passive:true});
+          banner.addEventListener('touchend',function(){
+            if(currentY>40){
+              banner.classList.remove('show');
+              dismissedCode=lastActiveCode;
+            }
+            banner.style.transform='';
+            startY=null; currentY=0;
+          });
+        })();
+
+        checkCurrentClass();
+        setInterval(checkCurrentClass, 30000);
+        </script></body></html>
+        """.trimIndent()
+    }
+}
