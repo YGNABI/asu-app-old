@@ -677,8 +677,6 @@ object DataStore {
     var moodleCourseMap: Map<String, String> = emptyMap()
     var gpaHistory: List<Pair<String, Double>> = emptyList()
 
-    fn f(key: String) = fields[key]?.trim()?.takeIf { it != "-" && it.isNotEmpty() } ?: "" //
-    // ... wait, let's write correct syntax:
     fun f(key: String) = fields[key]?.trim()?.takeIf { it != "-" && it.isNotEmpty() } ?: ""
 
     fun reset() {
