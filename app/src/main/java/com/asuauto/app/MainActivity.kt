@@ -1,7 +1,9 @@
 package com.asuauto.app
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.os.Bundle
 import android.view.View
 import android.webkit.WebView
@@ -21,6 +23,12 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private val PREFS = "asu_prefs"
+
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val activeNetworkInfo = connectivityManager.activeNetworkInfo
+        return activeNetworkInfo != null && activeNetworkInfo.isConnected
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -106,7 +114,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         logoutTop.setOnClickListener {
-            prefs.edit().remove("username").remove("password").remove("biometric_enabled").remove("gpa_history").remove("student_avatar").apply()
+            prefs.edit().remove("username").remove("password").remove("biometric_enabled").remove("gpa_history").remove("student_avatar").remove("last_update_time").apply()
             android.webkit.CookieManager.getInstance().removeAllCookies(null)
             android.webkit.CookieManager.getInstance().flush()
             getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).edit().clear().apply()
@@ -117,6 +125,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         saveButton.setOnClickListener {
+            if (usernameInput.text.isBlank() || passwordInput.text.isBlank()) {
+                android.widget.Toast.makeText(this, "يرجى إدخال الرقم الجامعي وكلمة السر", android.widget.Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             prefs.edit()
                 .putString("username", usernameInput.text.toString())
                 .putString("password", passwordInput.text.toString())
@@ -157,8 +169,8 @@ class MainActivity : AppCompatActivity() {
 
                 view.evaluateJavascript("""
                     (function() {
-                        var avatarImg = document.querySelector('img[src*="pjpeg"], img[src*="get_image"], img[id*="photo"], img[class*="avatar"], .t-Avatar img, img[alt*="Student"]');
-                        if (avatarImg && avatarImg.src && !avatarImg.src.includes('logo')) { return avatarImg.src; }
+                        var avatarImg = document.querySelector('img[src*="apex_util.get_blob"]');
+                        if (avatarImg) { return avatarImg.src; }
                         return "";
                     })();
                 """.trimIndent()) { imgSrc ->
@@ -190,7 +202,11 @@ class MainActivity : AppCompatActivity() {
 
                 if (pendingSisDashboardLaunch) {
                     stillOnAnyLoginPage(view) { stillOnLogin ->
-                        if (!stillOnLogin) {
+                        if (stillOnLogin) {
+                            pendingSisDashboardLaunch = false
+                            android.widget.Toast.makeText(this@MainActivity, "الرقم الجامعي أو كلمة المرور غير صحيحة", android.widget.Toast.LENGTH_LONG).show()
+                            showSetupState()
+                        } else {
                             pendingSisDashboardLaunch = false
                             startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
                         }
@@ -205,27 +221,31 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnSisDashboard).setOnClickListener {
+            if (!isNetworkAvailable()) {
+                val hasCache = getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).getString("html", null) != null
+                if (hasCache) {
+                    startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                } else {
+                    android.widget.Toast.makeText(this, "لا يوجد اتصال بالإنترنت ولا توجد بيانات محفوظة", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                return@setOnClickListener
+            }
             pendingSisDashboardLaunch = true
-            android.widget.Toast.makeText(this, "جاري تجهيز موقع التعليم الالكتروني...", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(this, "جاري التحقق من الحساب...", android.widget.Toast.LENGTH_SHORT).show()
             webView.loadUrl("https://elearning.asu.edu.bh/?redirect=0")
         }
     }
 
     private fun canUseBiometric(): Boolean {
         val manager = BiometricManager.from(this)
-        return manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
-            BiometricManager.BIOMETRIC_SUCCESS
+        return manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     private fun promptBiometric(onSuccess: () -> Unit, onFail: () -> Unit) {
         val executor = ContextCompat.getMainExecutor(this)
         val prompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                onSuccess()
-            }
-            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                onFail()
-            }
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { onSuccess() }
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) { onFail() }
             override fun onAuthenticationFailed() {}
         })
         val info = BiometricPrompt.PromptInfo.Builder()
