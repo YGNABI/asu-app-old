@@ -227,7 +227,7 @@ object DashboardHtmlBuilder {
                 val gpa = Regex("GPA\\s+([\\d.]+)").find(text)?.groupValues?.get(1)?.toDoubleOrNull()
                 if (gpa != null) {
                     var termName = text.substringBefore("Average").substringBefore("المعدل").trim()
-                    if (termName.length > 12) termName = termName.take(12) + ".."
+                    if (termName.length > 10) termName = termName.take(10) + ".."
                     transcriptHistory.add(termName to gpa)
                 }
             }
@@ -298,17 +298,15 @@ object DashboardHtmlBuilder {
         if (history.size < 2) {
             sb.append("<div class='empty' style='padding:20px 4px'>${t("لا توجد فصول سابقة كافية لرسم منحنى التطور", "Not enough past semesters to draw a trend curve")}</div>")
         } else {
-            val w = 320.0; val h = 180.0; val padL = 36.0; val padR = 12.0; val padT = 15.0; val padB = 30.0
-            val values = history.map { it.second }
-            val minV = 60.0
-            val maxV = 100.0
+            val w = 340.0; val h = 200.0; val padL = 36.0; val padR = 15.0; val padT = 15.0; val padB = 45.0
+            val minV = 60.0; val maxV = 100.0
             val span = maxV - minV
             val n = history.size
 
             fun xAt(i: Int) = padL + (w - padL - padR) * i / (n - 1).coerceAtLeast(1)
             fun yAt(v: Double) = padT + (h - padT - padB) * (1.0 - ((v - minV) / span))
 
-            sb.append("<svg viewBox='0 0 $w $h' width='100%' height='180' preserveAspectRatio='xMidYMid meet'>")
+            sb.append("<svg viewBox='0 0 $w $h' width='100%' height='200' preserveAspectRatio='xMidYMid meet'>")
             
             val steps = 4
             for (s in 0..steps) {
@@ -321,19 +319,25 @@ object DashboardHtmlBuilder {
             sb.append("<line x1='$padL' y1='${h - padB}' x2='${w - padR}' y2='${h - padB}' stroke='#888' stroke-width='1.2'/>")
 
             val pts = history.mapIndexed { i, pair -> xAt(i) to yAt(pair.second) }
-            val path = StringBuilder("M${pts[0].first},${pts[0].second} ")
+            
             for (i in 0 until pts.size - 1) {
-                val p2 = pts[i + 1]
-                path.append("L${p2.first},${p2.second} ")
+                val p1 = pts[i]; val p2 = pts[i + 1]
+                val v1 = history[i].second; val v2 = history[i + 1].second
+                val lineColor = if (v2 >= v1) "#27ae60" else "#e74c3c"
+                sb.append("<line x1='${p1.first}' y1='${p1.second}' x2='${p2.first}' y2='${p2.second}' stroke='$lineColor' stroke-width='3' stroke-linecap='round'/>")
             }
 
-            sb.append("<path d='$path' fill='none' stroke='#3498db' stroke-width='2.5' stroke-linecap='round'/>")
-            pts.forEach { p ->
-                sb.append("<circle cx='${p.first}' cy='${p.second}' r='3.5' fill='#2980b9'/>")
+            pts.forEachIndexed { i, p ->
+                val v1 = history[i].second
+                val prevV = if (i > 0) history[i-1].second else v1
+                val dotColor = if (v1 >= prevV) "#27ae60" else "#e74c3c"
+                sb.append("<circle cx='${p.first}' cy='${p.second}' r='4' fill='$dotColor'/>")
             }
+
             history.forEachIndexed { i, pair ->
                 val px = pts[i].first
-                sb.append("<text x='$px' y='${h - padB + 12}' font-size='8' fill='#666' text-anchor='middle'>${esc(pair.first)}</text>")
+                val py = h - padB + 10
+                sb.append("<text x='$px' y='$py' font-size='8' fill='#666' text-anchor='end' transform='rotate(-35,$px,$py)'>${esc(pair.first)}</text>")
             }
             sb.append("</svg>")
         }
@@ -593,7 +597,7 @@ object DashboardHtmlBuilder {
         .empty{text-align:center;color:var(--text-muted);padding:40px 10px}
         .gold{background:#caa23e;color:#fff;font-size:11px;padding:3px 10px;border-radius:12px}
         .pill{color:#fff;font-size:10px;padding:2px 9px;border-radius:10px}
-        .emailBtn{display:inline-block;margin-top:6px;background:#2980b9;color:#fff;font-size:11px;padding:6px 12px;border-radius:8px;cursor:pointer;text-decoration:none}
+        .emailBtn{display:inline-block;margin-top:6px;background:#0078d4;color:#fff;font-size:11px;padding:6px 12px;border-radius:8px;cursor:pointer;text-decoration:none}
         .calBtn{display:inline-block;margin-top:6px;background:#eef4fb;color:#2c6cb0;font-size:11px;padding:5px 10px;border-radius:8px;cursor:pointer}
         .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
         .ov.show{display:flex}
@@ -622,14 +626,15 @@ object DashboardHtmlBuilder {
         val calLblExams = t("أضف مواعيد الامتحانات للتقويم", "Add Exams to Calendar")
         val materialsLbl = t("عرض المادة التعليمية", "View Course Materials")
         val assessmentsLbl = t("عرض الواجبات والبحوث", "View Assignments & Research")
-        val emailLbl = t("إرسال إيميل للمدرس", "Email Instructor")
+        val emailLbl = t("إرسال عبر Outlook", "Send via Outlook")
+        val outlookMissingMsg = t("تطبيق Microsoft Outlook غير متوفر في جهازك. يرجى تثبيته من متجر التطبيقات لإرسال البريد.", "Microsoft Outlook is not installed. Please install it from the app store to send emails.")
         val lSection = t("الشعبة", "Section"); val lTeacher = t("المدرس", "Instructor")
         val lMidGrade = t("علامة المنتصف", "Midterm Grade"); val lWork = t("أعمال أخرى", "Other Work")
         val lFinGrade = t("علامة الامتحان النهائي", "Final Exam Grade"); val lTotal = t("المجموع", "Total")
         val lMidExam = t("امتحان المنتصف", "Midterm Exam"); val lFinExam = t("الامتحان النهائي", "Final Exam")
         val lCode = t("رمز المقرر", "Course Code")
         return """
-        <script>var CALLBL="$calLbl",CALLBL_EXAMS="$calLblExams",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",EMAILLBL="$emailLbl",ROOMLBL="${t("القاعة", "Room")}";</script>
+        <script>var CALLBL="$calLbl",CALLBL_EXAMS="$calLblExams",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",EMAILLBL="$emailLbl",OUTLOOK_MISSING="$outlookMissingMsg",ROOMLBL="${t("القاعة", "Room")}";</script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
         <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
@@ -669,8 +674,10 @@ object DashboardHtmlBuilder {
           document.getElementById('mn').textContent=c.n;
           document.getElementById('ms').textContent=v(c.s);
           document.getElementById('mi').textContent=v(c.i);
-          var emailHtml = c.i && c.i !== '-' ? "<a class='emailBtn' href='mailto:?subject=Inquiry regarding " + encodeURIComponent(c.n) + "'>&#9993; " + EMAILLBL + "</a>" : '';
+          
+          var emailHtml = c.i && c.i !== '-' ? "<span class='emailBtn' onclick=\"openOutlookEmail('"+c.i+"','"+c.n+"')\">&#9993; " + EMAILLBL + "</span>" : '';
           document.getElementById('mEmailBtn').innerHTML = emailHtml;
+          
           document.getElementById('mmg').textContent=v(c.mg);
           document.getElementById('mwg').textContent=v(c.wg);
           document.getElementById('mfg').textContent=v(c.fg);
@@ -688,6 +695,15 @@ object DashboardHtmlBuilder {
           document.getElementById('mAssessmentsBtn').innerHTML = assHtml;
           document.getElementById('ov').classList.add('show');
         }
+
+        function openOutlookEmail(instructorName, courseName) {
+          if(typeof AndroidBridge !== 'undefined') {
+            AndroidBridge.openOutlook(instructorName, courseName);
+          } else {
+            alert(OUTLOOK_MISSING);
+          }
+        }
+
         function openGrade(k){
           var g=(typeof G!=='undefined')?G[k]:null; if(!g)return;
           document.getElementById('gmn').textContent=g.n;
