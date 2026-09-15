@@ -1,25 +1,28 @@
 package com.asuauto.app
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.net.ConnectivityManager
 import android.os.Bundle
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import android.content.Intent
 import org.json.JSONArray
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class SisDashboardActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var resultWebView: WebView
-    private lateinit var statusText: TextView
     private lateinit var progressLayout: LinearLayout
 
     private var phase = "login"
@@ -30,9 +33,15 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 14
+    private val CACHE_VERSION = 15
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
+
+    private fun isNetworkAvailable(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val activeNetwork = cm.activeNetworkInfo
+        return activeNetwork != null && activeNetwork.isConnected
+    }
 
     private val JS_LIB = """
         function getField(label) {
@@ -144,9 +153,6 @@ class SisDashboardActivity : AppCompatActivity() {
             }
             return JSON.stringify(out);
         }
-        function stillOnMoodleLogin() {
-            return document.querySelector('input[name="password"]') ? true : false;
-        }
         function scrapeTranscript() {
             var tbl = document.getElementById('report_table_R3755411640631850167');
             if (!tbl) return '[]';
@@ -166,6 +172,29 @@ class SisDashboardActivity : AppCompatActivity() {
         }
     """.trimIndent()
 
+    private fun showAnimatedLoader() {
+        progressLayout.visibility = View.GONE
+        resultWebView.visibility = View.VISIBLE
+        val loaderHtml = """
+            <html dir="rtl"><body style="display:flex;align-items:center;justify-content:center;background:#f2f3f5;height:100vh;margin:0;">
+            <div style="text-align:center;">
+                <div style="position:relative;width:120px;height:120px;border-radius:50%;background:#e0e0e0;margin:0 auto;overflow:hidden;box-shadow:inset 0 2px 10px rgba(0,0,0,0.1);">
+                    <div id="fill" style="position:absolute;bottom:0;left:0;width:100%;height:0%;background:#1D9E75;transition:height 0.4s ease-out;"></div>
+                    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2;color:#fff;font-family:sans-serif;font-weight:bold;font-size:32px;text-shadow:0 1px 3px rgba(0,0,0,0.3);">ASU</div>
+                </div>
+            </div>
+            <script>function setProgress(p){document.getElementById('fill').style.height=p+'%';}</script>
+            </body></html>
+        """.trimIndent()
+        resultWebView.loadDataWithBaseURL(null, loaderHtml, "text/html", "utf-8", null)
+    }
+
+    private fun updateLoaderProgress(percent: Int) {
+        runOnUiThread {
+            resultWebView.evaluateJavascript("if(typeof setProgress!=='undefined') setProgress($percent);", null)
+        }
+    }
+
     private fun startScraping() {
         phase = "login"
         sessionId = ""
@@ -177,9 +206,8 @@ class SisDashboardActivity : AppCompatActivity() {
         DataStore.reset()
         DebugLog.reset()
 
-        progressLayout.visibility = View.VISIBLE
-        resultWebView.visibility = View.GONE
-        setStatus("جاري تسجيل الدخول...")
+        showAnimatedLoader()
+        updateLoaderProgress(10)
 
         webView.loadUrl("https://sis.asu.edu.bh/ords/f?p=101:1")
 
@@ -197,7 +225,6 @@ class SisDashboardActivity : AppCompatActivity() {
         setContentView(R.layout.activity_sis_dashboard)
 
         progressLayout = findViewById(R.id.progressLayout)
-        statusText = findViewById(R.id.statusText)
         webView = findViewById(R.id.scrapeWebView)
         resultWebView = findViewById(R.id.resultWebView)
 
@@ -210,6 +237,21 @@ class SisDashboardActivity : AppCompatActivity() {
         resultWebView.addJavascriptInterface(bridge, "AndroidBridge")
 
         val prefs = getSharedPreferences("asu_prefs", MODE_PRIVATE)
+        
+        DashboardHtmlBuilder.isOffline = !isNetworkAvailable()
+        DashboardHtmlBuilder.lastUpdate = prefs.getString("last_update_time", "") ?: ""
+
+        val cachePrefs = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE)
+        val cachedVersion = cachePrefs.getInt("version", -1)
+        val cached = if (cachedVersion == CACHE_VERSION) cachePrefs.getString("html", null) else null
+
+        if (DashboardHtmlBuilder.isOffline && cached != null) {
+            progressLayout.visibility = View.GONE
+            resultWebView.visibility = View.VISIBLE
+            resultWebView.loadDataWithBaseURL(null, cached, "text/html", "utf-8", null)
+            return
+        }
+
         val user = prefs.getString("username", "") ?: ""
         val pass = prefs.getString("password", "") ?: ""
 
@@ -245,7 +287,7 @@ class SisDashboardActivity : AppCompatActivity() {
                     "afterLogin" -> {
                         view.evaluateJavascript("AndroidBridge.checkLogin(stillOnLogin());", null)
                         if (sessionId.isEmpty()) return
-                        setStatus("جاري جلب معلومات الطالب...")
+                        updateLoaderProgress(20)
                         view.loadUrl(pageUrl(1))
                         phase = "page1"
                     }
@@ -259,7 +301,7 @@ class SisDashboardActivity : AppCompatActivity() {
                         view.evaluateJavascript("AndroidBridge.tbl('registration', scrapeTableById('report_table_currRegId'));", null)
                         view.evaluateJavascript("AndroidBridge.tbl('semesterGrades', scrapeTableById('report_table_termmarks'));", null)
                         view.evaluateJavascript("AndroidBridge.tbl('attendance', scrapeTableByLabel('احصائيات الحضور والغياب'));", null)
-                        setStatus("جاري جلب مواعيد التسجيل...")
+                        updateLoaderProgress(30)
                         view.postDelayed({ view.loadUrl(pageUrl(6)) }, 200)
                         phase = "page6"
                     }
@@ -269,7 +311,7 @@ class SisDashboardActivity : AppCompatActivity() {
                         view.evaluateJavascript("AndroidBridge.txt('addDropStart', getField('بداية تاريخ السحب و الأضافه'));", null)
                         view.evaluateJavascript("AndroidBridge.txt('addDropEnd', getField('نهاية تاريخ السحب ولأضافه'));", null)
                         view.evaluateJavascript("AndroidBridge.txt('academicStatus', getField('الوضع الأكاديمي'));", null)
-                        setStatus("جاري جلب الخطة الدراسية...")
+                        updateLoaderProgress(45)
                         view.postDelayed({ view.loadUrl(pageUrl(3)) }, 200)
                         phase = "planSummary"
                     }
@@ -281,6 +323,8 @@ class SisDashboardActivity : AppCompatActivity() {
                     "planDetail" -> {
                         view.evaluateJavascript("AndroidBridge.tbl('planDetail_$planIndex', scrapePlanDetail());", null)
                         planIndex++
+                        val p = 45 + ((planIndex.toFloat() / planLinks.size) * 20).toInt()
+                        updateLoaderProgress(p)
                         view.postDelayed({ nextPlanDetail(view) }, 250)
                         phase = "planWait"
                     }
@@ -291,7 +335,7 @@ class SisDashboardActivity : AppCompatActivity() {
                         view.evaluateJavascript("AndroidBridge.txt('honorList', getField('على لائحة الشرف'));", null)
                         view.evaluateJavascript("AndroidBridge.txt('planHours', getField('ساعات الخطه الدراسية'));", null)
                         view.evaluateJavascript("AndroidBridge.tbl('transcript', scrapeTranscript());", null)
-                        setStatus("جاري جلب الأقساط...")
+                        updateLoaderProgress(75)
                         view.postDelayed({ view.loadUrl(pageUrl(18)) }, 200)
                         phase = "payment"
                     }
@@ -302,43 +346,26 @@ class SisDashboardActivity : AppCompatActivity() {
                         view.evaluateJavascript("AndroidBridge.txt('inst2Paid', getField('تم دفع القسط الثاني؟'));", null)
                         view.evaluateJavascript("AndroidBridge.txt('inst3', getField('قيمة القسط الثالث'));", null)
                         view.evaluateJavascript("AndroidBridge.txt('inst3Paid', getField('تم دفع القسط الثالث؟'));", null)
-                        setStatus("جاري جلب كشف الحساب...")
+                        updateLoaderProgress(85)
                         view.postDelayed({ view.loadUrl(pageUrl(7)) }, 200)
                         phase = "account"
                     }
                     "account" -> {
                         view.evaluateJavascript("AndroidBridge.txt('balance', getById('P7_BALANCE'));", null)
-                        setStatus("جاري جلب كشف الحساب...")
+                        updateLoaderProgress(95)
                         accountPageIndex = 1
                         scrapeAccountPageAndContinue(view)
                     }
                     "moodleCourses" -> {
-                        view.evaluateJavascript("stillOnMoodleLogin();") { stillOnLogin ->
-                            if (stillOnLogin == "true") {
-                                DebugLog.error("لا توجد جلسة Moodle سارية")
-                                phase = "done"
-                                view.postDelayed({ buildAndShowDashboard() }, 300)
-                                return@evaluateJavascript
-                            }
-                            view.evaluateJavascript("AndroidBridge.tbl('moodleCourses', scrapeMoodleCourses());", null)
-                            phase = "done"
-                            view.postDelayed({ buildAndShowDashboard() }, 300)
-                        }
+                        view.evaluateJavascript("AndroidBridge.tbl('moodleCourses', scrapeMoodleCourses());", null)
+                        updateLoaderProgress(100)
+                        phase = "done"
+                        view.postDelayed({ buildAndShowDashboard() }, 300)
                     }
                 }
             }
         }
-
-        val cachePrefs = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE)
-        val cachedVersion = cachePrefs.getInt("version", -1)
-        val cached = if (cachedVersion == CACHE_VERSION) cachePrefs.getString("html", null) else null
-        if (cached != null) {
-            progressLayout.visibility = View.GONE
-            resultWebView.visibility = View.VISIBLE
-            resultWebView.loadDataWithBaseURL(null, cached, "text/html", "utf-8", null)
-        } else {
-            startScraping()
-        }
+        startScraping()
     }
 
     private var accountPageIndex = 0
@@ -348,10 +375,8 @@ class SisDashboardActivity : AppCompatActivity() {
         view.evaluateJavascript("clickAccountNext();") { hasNext ->
             if (hasNext == "true" && accountPageIndex < 30) {
                 accountPageIndex++
-                setStatus("جاري جلب كشف الحساب (صفحة $accountPageIndex)...")
                 view.postDelayed({ scrapeAccountPageAndContinue(view) }, 900)
             } else {
-                setStatus("جاري جلب مواد التعليم الالكتروني...")
                 phase = "moodleCourses"
                 view.loadUrl("https://elearning.asu.edu.bh/?redirect=0")
             }
@@ -360,18 +385,12 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private fun nextPlanDetail(view: WebView) {
         if (planIndex < planLinks.size) {
-            setStatus("جاري جلب الخطة (${planIndex + 1}/${planLinks.size})...")
             phase = "planDetail"
             view.loadUrl("https://sis.asu.edu.bh/ords/" + planLinks[planIndex])
         } else {
-            setStatus("جاري جلب كشف الدرجات...")
             phase = "grades"
             view.loadUrl(pageUrl(8))
         }
-    }
-
-    private fun setStatus(text: String) {
-        runOnUiThread { statusText.text = text }
     }
 
     inner class Bridge {
@@ -415,17 +434,21 @@ class SisDashboardActivity : AppCompatActivity() {
             if (failed && phase != "done" && phase != "failed") {
                 phase = "failed"
                 runOnUiThread {
-                    resultWebView.visibility = View.GONE
-                    webView.visibility = View.GONE
-                    progressLayout.visibility = View.VISIBLE
-                    setStatus("اسم المستخدم أو الرقم السري غير صحيح ⚠️")
+                    android.widget.Toast.makeText(this@SisDashboardActivity, "جلسة منتهية، يرجى إعادة الدخول", android.widget.Toast.LENGTH_SHORT).show()
+                    finish()
                 }
             }
         }
 
         @JavascriptInterface
         fun refresh() {
-            runOnUiThread { startScraping() }
+            runOnUiThread {
+                if (isNetworkAvailable()) {
+                    startScraping()
+                } else {
+                    android.widget.Toast.makeText(this@SisDashboardActivity, "تتطلب عملية التحديث اتصالاً بالإنترنت", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
         }
 
         @JavascriptInterface
@@ -503,16 +526,6 @@ class SisDashboardActivity : AppCompatActivity() {
                 }
             }
         }
-
-        @JavascriptInterface
-        fun logout() {
-            runOnUiThread {
-                android.webkit.CookieManager.getInstance().removeAllCookies(null)
-                getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().clear().apply()
-                DataStore.reset()
-                finish()
-            }
-        }
     }
 
     private fun toList(t: JSONArray?): List<List<String>> {
@@ -572,12 +585,15 @@ class SisDashboardActivity : AppCompatActivity() {
         DataStore.moodleCourses = moodleCourses
         DataStore.moodleCourseMap = MoodleCourseMatcher.match(DataStore.registration, moodleCourses)
 
+        val currentTime = SimpleDateFormat("yyyy-MM-dd / hh:mm a", Locale.US).format(Date())
+        prefs.edit().putString("last_update_time", currentTime).apply()
+        DashboardHtmlBuilder.lastUpdate = currentTime
+        DashboardHtmlBuilder.isOffline = false
+
         DashboardHtmlBuilder.LANG = prefs.getString("lang", "ar") ?: "ar"
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).putInt("version", CACHE_VERSION).apply()
         resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
-        progressLayout.visibility = View.GONE
-        resultWebView.visibility = View.VISIBLE
     }
 
     private var pendingEvent: Triple<String, String, Pair<String, String>>? = null
@@ -667,7 +683,6 @@ object DataStore {
     val planStats = mutableListOf<List<String>>()
     var moodleCourses: List<CourseSummary> = emptyList()
     var moodleCourseMap: Map<String, String> = emptyMap()
-    var gpaHistory: List<Pair<String, Double>> = emptyList()
 
     fun f(key: String) = fields[key]?.trim()?.takeIf { it != "-" && it.isNotEmpty() } ?: ""
 
@@ -683,6 +698,5 @@ object DataStore {
         planNames = emptyList()
         moodleCourses = emptyList()
         moodleCourseMap = emptyMap()
-        gpaHistory = emptyList()
     }
 }
