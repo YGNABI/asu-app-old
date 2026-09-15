@@ -179,7 +179,7 @@ object DashboardHtmlBuilder {
         val sb = StringBuilder()
         sb.append(HEAD())
         sb.append("<div id='pullIndicator'><svg id='pullSvg' viewBox='0 0 100 0' preserveAspectRatio='none'><path id='pullPath' d='M0,0 L100,0 L100,0 Q50,0 0,0 Z' fill='#2c3e50'/></svg>")
-        sb.append("<img id='pullLogoImg' src='data:image/jpeg;base64,$pullLogoBase64' style='position:absolute;top:8px;left:50%;transform:translateX(-50%) scale(0.7);opacity:0;width:64px;pointer-events:none'/>")
+        sb.append("<img id='pullLogoImg' src='data:image/jpeg;base64,$pullLogoBase64' style='position:absolute;top:14px;left:50%;transform:translateX(-50%) scale(0.75);opacity:0;width:110px;pointer-events:none'/>")
         sb.append("</div>")
         sb.append("<div id='scrollWrap'>")
         sb.append("<div id='offlineBanner' style='display:none;background:#e74c3c;color:#fff;text-align:center;padding:6px;font-size:12px;font-weight:bold;position:sticky;top:43px;z-index:10'>")
@@ -249,7 +249,7 @@ object DashboardHtmlBuilder {
                 }
             }
         }
-        val chronologicalTerms = termsList.reversed()
+        val chronologicalTerms = termsList
         val transcriptHistory = chronologicalTerms.mapIndexed { index, pair ->
             "الفصل ${index + 1}/${pair.first}" to pair.second
         }
@@ -594,13 +594,15 @@ object DashboardHtmlBuilder {
         .tabs{display:flex;position:sticky;top:0;background:#2c3e50;z-index:20}
         .tab{flex:1;text-align:center;padding:12px 2px;color:#fff;font-size:12px;cursor:pointer}
         .tab.active{background:#34495e;border-bottom:3px solid #3498db}
-        .page{width:100%;flex-shrink:0;padding:12px;box-sizing:border-box}
-        #pagesContainer{display:flex;transition:transform 0.3s ease-out}
+        .page{width:25%;flex-shrink:0;padding:12px;box-sizing:border-box}
+        #pagesContainer{display:flex;transition:transform 0.3s ease-out;width:400%}
         .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px}
         .honor-gold{background:linear-gradient(135deg,#fcf4d9 0%,#e8c96b 50%,#d4af37 100%) !important;border:1px solid #d4af37;color:#333 !important}
         .honor-gold .muted,.honor-gold .lbl{color:#5a4a15 !important}
+        .honor-gold .val,.honor-gold .big{color:#333 !important}
         .honor-silver{background:linear-gradient(135deg,#f4f5f6 0%,#d5d7d9 50%,#aeb1b3 100%) !important;border:1px solid #aeb1b3;color:#333 !important}
         .honor-silver .muted,.honor-silver .lbl{color:#4a4d4f !important}
+        .honor-silver .val,.honor-silver .big{color:#333 !important}
         .avatar{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold}
         .big{font-size:15px;font-weight:bold}
         .muted{font-size:12px;color:#888}
@@ -646,7 +648,7 @@ object DashboardHtmlBuilder {
         @keyframes spin {0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
         #pullIndicator{position:relative;overflow:hidden;height:0}
         #pullSvg{display:block;width:100%}
-        #scrollWrap{position:relative}
+        #scrollWrap{position:relative;overflow-x:hidden}
         </style></head><body>
         <div class="tabs">
         <div class="tab active" onclick="sp(this,'home')">${t("الرئيسية", "Home")}</div>
@@ -728,22 +730,28 @@ object DashboardHtmlBuilder {
         var gesture=null; // null | 'vertical' | 'horizontal'
 
         function updatePullVisual(pullDist){
-          var h=Math.min(pullDist,PULL_MAX);
+          // Exponential ease instead of a flat 0.4 multiplier — tracks the
+          // finger closely at first (feels responsive, not heavy) and only
+          // resists as it nears the max, instead of feeling capped/laggy
+          // the whole way.
+          var eased = PULL_MAX * (1 - Math.exp(-pullDist / (PULL_MAX * 0.9)));
+          var h=eased;
           var bow=h*0.55;
           var total=h+bow;
           pullIndicator.style.height=total+'px';
           pullSvg.setAttribute('viewBox','0 0 100 '+total);
           pullSvg.style.height=total+'px';
           pullPath.setAttribute('d','M0,0 L100,0 L100,'+h+' Q50,'+total+' 0,'+h+' Z');
-          var ratio=Math.min(pullDist/PULL_MAX,1);
-          pullLogoImg.style.opacity=(ratio*0.35).toString();
-          pullLogoImg.style.transform='translateX(-50%) scale('+(0.6+ratio*0.4)+')';
+          var ratio=Math.min(eased/PULL_MAX,1);
+          pullLogoImg.style.opacity=(ratio*0.85).toString();
+          pullLogoImg.style.transform='translateX(-50%) scale('+(0.75+ratio*0.35)+')';
+          return eased;
         }
 
         function setActivePage(index, animate){
           currentPageIndex=index;
           pagesContainer.style.transition = animate ? 'transform 0.3s ease-out' : 'none';
-          pagesContainer.style.transform = 'translateX(' + (index * 100) + '%)';
+          pagesContainer.style.transform = 'translateX(' + (index * 25) + '%)';
           document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
           document.getElementById(PAGE_ORDER[index]).classList.add('active');
           document.querySelectorAll('.tab').forEach(function(t,i){
@@ -778,19 +786,20 @@ object DashboardHtmlBuilder {
             if(dy > 0){
               isPulling=true;
               currentY=dy;
-              var pullDist=currentY*0.4;
-              scrollWrap.style.transform='translateY('+pullDist+'px)';
-              updatePullVisual(pullDist);
+              var eased=updatePullVisual(currentY);
+              scrollWrap.style.transform='translateY('+eased+'px)';
             }
           } else if(gesture==='horizontal'){
-            // Since the html has dir="rtl", array-order-next is visually to
-            // the left already, so plain index math (no RTL flip) is correct.
+            // pagesContainer is 400% wide (4 pages x 25% each). In this RTL
+            // layout, page 0 (home) sits at the right edge by default, and
+            // moving to a later page needs a POSITIVE translateX (in steps
+            // of 25%, not 100%, since that's this container's own width).
             var atFirst = currentPageIndex===0 && dx>0;
             var atLast = currentPageIndex===PAGE_ORDER.length-1 && dx<0;
             var damp = (atFirst || atLast) ? 0.3 : 1;
             currentX = dx * damp;
-            var basePercent = -currentPageIndex*100;
-            var dragPercent = (currentX / window.innerWidth) * 100;
+            var basePercent = currentPageIndex*25;
+            var dragPercent = -(currentX / window.innerWidth) * 25;
             pagesContainer.style.transform = 'translateX(' + (basePercent + dragPercent) + '%)';
           }
         },{passive:true});
@@ -798,9 +807,9 @@ object DashboardHtmlBuilder {
         document.addEventListener('touchend',function(e){
           if(gesture==='ignore'){ gesture=null; return; }
           if(gesture==='vertical' && isPulling) {
-            scrollWrap.style.transition='transform 0.3s ease-out';
+            scrollWrap.style.transition='transform 0.45s cubic-bezier(.22,.68,0,1.2)';
             scrollWrap.style.transform='translateY(0px)';
-            pullIndicator.style.transition='height 0.3s ease-out';
+            pullIndicator.style.transition='height 0.45s cubic-bezier(.22,.68,0,1.2)';
             updatePullVisual(0);
             if(currentY>160){
               document.getElementById('refreshSpinner').style.display='block';
