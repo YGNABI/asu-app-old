@@ -198,7 +198,12 @@ object DashboardHtmlBuilder {
         val (avatarBg, avatarFg) = warnColor(warning)
         val cardClass = if (warning.isBlank()) honorRollClass() else "card"
         val initials = name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }
-        val avatarUrl = d.f("studentAvatar")
+        var avatarUrl = d.f("studentAvatar")
+        
+        // تعديل الصورة لتأخذ المسار الكامل إذا كان الرابط نسبي
+        if (avatarUrl.isNotBlank() && !avatarUrl.startsWith("http")) {
+            avatarUrl = "https://sis.asu.edu.bh/$avatarUrl"
+        }
 
         val sb = StringBuilder()
         sb.append("<div class='$cardClass'>")
@@ -227,24 +232,24 @@ object DashboardHtmlBuilder {
         }
         sb.append("</div>")
 
-        val transcriptHistory = mutableListOf<Pair<String, Double>>()
-        var termCounter = 1
-        val rRows = d.transcript
-        for (row in rRows) {
+        // ترتيب الفصول برمجياً لتبدأ من الأقدم إلى الأحدث
+        val termsList = mutableListOf<Pair<String, Double>>()
+        for (row in d.transcript) {
             if (row.size >= 2 && row[0] == "__TERM__") {
                 val text = row[1]
                 val gpa = Regex("GPA\\s+([\\d.]+)").find(text)?.groupValues?.get(1)?.toDoubleOrNull()
                 if (gpa != null) {
                     val yearMatch = Regex("20\\d{2}").find(text)?.value ?: "2026"
                     val shortYear = yearMatch.takeLast(2)
-                    val label = "الفصل $termCounter/$shortYear"
-                    transcriptHistory.add(label to gpa)
-                    termCounter++
+                    termsList.add(shortYear to gpa)
                 }
             }
         }
-        // عكس الرسم البياني ليظهر القديم يساراً
-        sb.append(gpaChartOverlay(transcriptHistory.reversed()))
+        val chronologicalTerms = termsList.reversed() // عكس المصفوفة لتكون الأقدم يساراً
+        val transcriptHistory = chronologicalTerms.mapIndexed { index, pair ->
+            "الفصل ${index + 1}/${pair.first}" to pair.second
+        }
+        sb.append(gpaChartOverlay(transcriptHistory))
 
         val cs = courses()
         if (cs.isEmpty()) {
@@ -460,7 +465,7 @@ object DashboardHtmlBuilder {
         }
 
         sb.append("<div class='legend2'>")
-        listOf("#1D9E75" to "٩٠-١٠٠", "#0F6E56" to "٨٠-٨٩", "#378ADD" to "٧٠-٧٩", "#BA7517" to "٦٠-٦٩", "#E24B4A" to "٥٠-٥٩", "#1a1a1a" to t("أقل من ٥٠", "Below 50"))
+        listOf("#1D9E75" to "٩٠-١٠٠", "#0F6E56" to "٨٠-٨9", "#378ADD" to "٧٠-٧9", "#BA7517" to "٦٠-٦9", "#E24B4A" to "٥٠-٥9", "#1a1a1a" to t("أقل من ٥٠", "Below 50"))
             .forEach { (col, lbl) -> sb.append("<span><i style='background:$col'></i>$lbl</span>") }
         sb.append("</div>")
         sb.append("<div class='filters'><div class='chip' onclick=\"fg(this,'all')\">${t("الكل", "All")}</div><div class='chip active' onclick=\"fg(this,'sem')\">${t("حسب الفصل", "By Semester")}</div></div>")
@@ -622,7 +627,6 @@ object DashboardHtmlBuilder {
         <div class="tab" onclick="sp(this,'plan')">${t("الخطة", "Plan")}</div>
         <div class="tab" onclick="sp(this,'grades')">${t("الدرجات", "Grades")}</div>
         <div class="tab" onclick="sp(this,'account')">${t("الحساب", "Account")}</div>
-        <div onclick="if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh()" style="padding:12px 10px;color:#fff;background:#1a252f;cursor:pointer">&#8635;</div>
         </div>
         """.trimIndent()
     }
@@ -666,10 +670,8 @@ object DashboardHtmlBuilder {
         <div class='kv'><span>$lTotal</span><span id='gmtotal'></span></div>
         </div></div>
         <script>
-        var startY = 0;
-        var currentY = 0;
-        var refreshThreshold = 130; // رفعنا حد السحب عشان ما يشتغل من لمسة خفيفة
-        
+        var startY=0;
+        var currentY=0;
         document.body.addEventListener('touchstart',function(e){
           if(window.scrollY<=0) startY=e.touches[0].clientY;
         },{passive:true});
@@ -681,14 +683,13 @@ object DashboardHtmlBuilder {
         },{passive:true});
         
         document.body.addEventListener('touchend',function(e){
-          if(window.scrollY<=0 && startY>0 && currentY > refreshThreshold){
+          if(window.scrollY<=0 && startY>0 && currentY>130){
             document.getElementById('refreshSpinner').style.display='block';
             if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
           }
           startY=0; 
           currentY=0;
         });
-
         function sp(el,id){
           document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
           document.getElementById(id).classList.add('active');
