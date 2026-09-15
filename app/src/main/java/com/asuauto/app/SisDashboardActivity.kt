@@ -33,7 +33,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 15
+    private val CACHE_VERSION = 16
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -261,12 +261,13 @@ class SisDashboardActivity : AppCompatActivity() {
         
         DashboardHtmlBuilder.isOffline = !isNetworkAvailable()
         DashboardHtmlBuilder.lastUpdate = prefs.getString("last_update_time", "") ?: ""
+        DashboardHtmlBuilder.pullLogoBase64 = pullLogoBase64Cached()
 
         val cachePrefs = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE)
         val cachedVersion = cachePrefs.getInt("version", -1)
         val cached = if (cachedVersion == CACHE_VERSION) cachePrefs.getString("html", null) else null
 
-        if (DashboardHtmlBuilder.isOffline && cached != null) {
+        if (cached != null) {
             progressLayout.visibility = View.GONE
             resultWebView.visibility = View.VISIBLE
             resultWebView.loadDataWithBaseURL("https://sis.asu.edu.bh/", cached, "text/html", "utf-8", null)
@@ -567,6 +568,28 @@ class SisDashboardActivity : AppCompatActivity() {
         return rows
     }
 
+    private var pullLogoCache: String? = null
+
+    /**
+     * bar_logo.jpg (added to res/drawable) shown faint behind the pull-to-
+     * refresh curve. Encoded once per process and reused — this drawable is
+     * small and doesn't change, so there's no need to re-read/re-encode it
+     * on every dashboard build.
+     */
+    private fun pullLogoBase64Cached(): String {
+        pullLogoCache?.let { return it }
+        return try {
+            val stream = java.io.ByteArrayOutputStream()
+            val bitmap = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.bar_logo)
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, stream)
+            val encoded = android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
+            pullLogoCache = encoded
+            encoded
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
     private fun buildAndShowDashboard() {
         DataStore.registration = toList(rawTables["registration"])
         DataStore.semesterGrades = toList(rawTables["semesterGrades"])
@@ -620,6 +643,7 @@ class SisDashboardActivity : AppCompatActivity() {
         DashboardHtmlBuilder.isOffline = false
 
         DashboardHtmlBuilder.LANG = prefs.getString("lang", "ar") ?: "ar"
+        DashboardHtmlBuilder.pullLogoBase64 = pullLogoBase64Cached()
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).putInt("version", CACHE_VERSION).apply()
         

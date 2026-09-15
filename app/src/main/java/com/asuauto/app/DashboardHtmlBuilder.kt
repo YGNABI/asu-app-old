@@ -5,6 +5,7 @@ object DashboardHtmlBuilder {
     var LANG = "ar"
     var isOffline = false
     var lastUpdate = ""
+    var pullLogoBase64 = ""
     private fun t(ar: String, en: String) = if (LANG == "en") en else ar
 
     private fun esc(s: String) = s.replace("\"", "&quot;").replace("<", "&lt;")
@@ -177,6 +178,10 @@ object DashboardHtmlBuilder {
     fun build(): String {
         val sb = StringBuilder()
         sb.append(HEAD())
+        sb.append("<div id='pullIndicator'><svg id='pullSvg' viewBox='0 0 100 0' preserveAspectRatio='none'><path id='pullPath' d='M0,0 L100,0 L100,0 Q50,0 0,0 Z' fill='#2c3e50'/></svg>")
+        sb.append("<img id='pullLogoImg' src='data:image/jpeg;base64,$pullLogoBase64' style='position:absolute;top:8px;left:50%;transform:translateX(-50%) scale(0.7);opacity:0;width:64px;pointer-events:none'/>")
+        sb.append("</div>")
+        sb.append("<div id='scrollWrap'>")
         if (isOffline) {
             sb.append("<div style='background:#e74c3c;color:#fff;text-align:center;padding:6px;font-size:12px;font-weight:bold;position:sticky;top:43px;z-index:10'>")
             sb.append("📶❌ وضع عدم الاتصال — آخر تحديث: $lastUpdate")
@@ -187,6 +192,7 @@ object DashboardHtmlBuilder {
         sb.append("<div id='plan' class='page'>").append(plan()).append("</div>")
         sb.append("<div id='grades' class='page'>").append(grades()).append("</div>")
         sb.append("<div id='account' class='page'>").append(account()).append("</div>")
+        sb.append("</div>")
         sb.append(SCRIPT())
         return sb.toString()
     }
@@ -619,6 +625,9 @@ object DashboardHtmlBuilder {
         .activeBannerRoom{font-size:18px;font-weight:bold;margin-top:2px}
         .spinner {border:4px solid rgba(0,0,0,0.1);width:30px;height:30px;border-radius:50%;border-left-color:#3498db;animation:spin 1s linear infinite;margin:0 auto;}
         @keyframes spin {0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
+        #pullIndicator{position:relative;overflow:hidden;height:0}
+        #pullSvg{display:block;width:100%}
+        #scrollWrap{position:relative}
         </style></head><body>
         <div class="tabs">
         <div class="tab active" onclick="sp(this,'home')">${t("الرئيسية", "Home")}</div>
@@ -671,14 +680,33 @@ object DashboardHtmlBuilder {
         var startY=0;
         var currentY=0;
         var isPulling=false;
-        
+        var scrollWrap=document.getElementById('scrollWrap');
+        var pullIndicator=document.getElementById('pullIndicator');
+        var pullSvg=document.getElementById('pullSvg');
+        var pullPath=document.getElementById('pullPath');
+        var pullLogoImg=document.getElementById('pullLogoImg');
+        var PULL_MAX=160;
+
+        function updatePullVisual(pullDist){
+          var h=Math.min(pullDist,PULL_MAX);
+          var bow=h*0.55;
+          var total=h+bow;
+          pullIndicator.style.height=total+'px';
+          pullSvg.setAttribute('viewBox','0 0 100 '+total);
+          pullSvg.style.height=total+'px';
+          pullPath.setAttribute('d','M0,0 L100,0 L100,'+h+' Q50,'+total+' 0,'+h+' Z');
+          var ratio=Math.min(pullDist/PULL_MAX,1);
+          pullLogoImg.style.opacity=(ratio*0.35).toString();
+          pullLogoImg.style.transform='translateX(-50%) scale('+(0.6+ratio*0.4)+')';
+        }
+
         document.addEventListener('touchstart',function(e){
           if(window.scrollY<=0) {
             startY=e.touches[0].clientY;
-            document.body.style.transition='none';
+            scrollWrap.style.transition='none';
           }
         },{passive:true});
-        
+
         document.addEventListener('touchmove',function(e){
           if(startY>0 && window.scrollY<=0) {
             var y=e.touches[0].clientY;
@@ -686,21 +714,24 @@ object DashboardHtmlBuilder {
               isPulling=true;
               currentY=y-startY;
               var pullDist=currentY*0.4;
-              document.body.style.transform='translateY('+pullDist+'px)';
+              scrollWrap.style.transform='translateY('+pullDist+'px)';
+              updatePullVisual(pullDist);
             }
           }
         },{passive:true});
-        
+
         document.addEventListener('touchend',function(e){
           if(isPulling) {
-            document.body.style.transition='transform 0.3s ease-out';
-            document.body.style.transform='translateY(0px)';
+            scrollWrap.style.transition='transform 0.3s ease-out';
+            scrollWrap.style.transform='translateY(0px)';
+            pullIndicator.style.transition='height 0.3s ease-out';
+            updatePullVisual(0);
             if(currentY>160){
               document.getElementById('refreshSpinner').style.display='block';
               if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
             }
           }
-          startY=0; 
+          startY=0;
           currentY=0;
           isPulling=false;
         });
