@@ -205,18 +205,6 @@ class SisDashboardActivity : AppCompatActivity() {
         webView.settings.domStorageEnabled = true
         resultWebView.settings.javaScriptEnabled = true
 
-        // فرض تفعيل الوضع الليلي أو النهاري حسب إعدادات نظام الجهاز
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            val nightModeFlags = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
-            if (nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES) {
-                webView.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_ON
-                resultWebView.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_ON
-            } else {
-                webView.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_OFF
-                resultWebView.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_OFF
-            }
-        }
-
         val bridge = Bridge()
         webView.addJavascriptInterface(bridge, "AndroidBridge")
         resultWebView.addJavascriptInterface(bridge, "AndroidBridge")
@@ -524,17 +512,14 @@ class SisDashboardActivity : AppCompatActivity() {
                 try {
                     val intent = packageManager.getLaunchIntentForPackage("com.microsoft.office.outlook")
                     if (intent != null) {
-                        intent.addCategory(Intent.CATEGORY_LAUNCHER)
-                        intent.putExtra(Intent.EXTRA_SUBJECT, "Inquiry regarding $courseName - Instructor: $instructorName")
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         startActivity(intent)
                     } else {
                         android.widget.Toast.makeText(
                             this@SisDashboardActivity,
-                            "تطبيق Microsoft Outlook غير مثبت. يرجى تنزيله من المتجر لإرسال البريد.",
+                            "تطبيق Microsoft Outlook غير مثبت على الجهاز",
                             android.widget.Toast.LENGTH_LONG
                         ).show()
-                        val storeIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("market://details?id=com.microsoft.office.outlook"))
-                        startActivity(storeIntent)
                     }
                 } catch (e: Exception) {
                     android.widget.Toast.makeText(
@@ -675,37 +660,5 @@ class SisDashboardActivity : AppCompatActivity() {
             if (it.moveToFirst()) return it.getLong(0)
         }
         return null
-    }
-}
-
-object DataStore {
-    val fields = HashMap<String, String>()
-    var registration: List<List<String>> = emptyList()
-    var semesterGrades: List<List<String>> = emptyList()
-    var attendance: List<List<String>> = emptyList()
-    var transcript: List<List<String>> = emptyList()
-    var account: List<List<String>> = emptyList()
-    var planDetails: Map<Int, List<List<String>>> = emptyMap()
-    var planNames: List<String> = emptyList()
-    val planStats = mutableListOf<List<String>>()
-    var moodleCourses: List<CourseSummary> = emptyList()
-    var moodleCourseMap: Map<String, String> = emptyMap()
-    var gpaHistory: List<Pair<String, Double>> = emptyList()
-
-    fun f(key: String) = fields[key]?.trim()?.takeIf { it != "-" && it.isNotEmpty() } ?: ""
-
-    fun reset() {
-        fields.clear()
-        planStats.clear()
-        registration = emptyList()
-        semesterGrades = emptyList()
-        attendance = emptyList()
-        transcript = emptyList()
-        account = emptyList()
-        planDetails = emptyMap()
-        planNames = emptyList()
-        moodleCourses = emptyList()
-        moodleCourseMap = emptyMap()
-        gpaHistory = emptyList()
     }
 }
