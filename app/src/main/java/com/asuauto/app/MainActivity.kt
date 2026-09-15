@@ -96,16 +96,24 @@ class MainActivity : AppCompatActivity() {
         val savedUser = prefs.getString("username", null)
         val savedPass = prefs.getString("password", null)
         val biometricEnabled = prefs.getBoolean("biometric_enabled", false)
+        val hasCache = getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).getString("html", null) != null
 
+        // الدخول المباشر للوحة في حال وجود بيانات محفوظة (Cache)
         if (savedUser != null && savedPass != null) {
-            if (biometricEnabled && canUseBiometric()) {
-                showSetupState()
-                btnSisDashboard.visibility = View.GONE
-                buttonsLayout.visibility = View.GONE
-                promptBiometric(
-                    onSuccess = { showLoggedInState() },
-                    onFail = { }
-                )
+            if (hasCache) {
+                if (biometricEnabled && canUseBiometric()) {
+                    showSetupState()
+                    btnSisDashboard.visibility = View.GONE
+                    buttonsLayout.visibility = View.GONE
+                    promptBiometric(
+                        onSuccess = { 
+                            startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                        },
+                        onFail = { }
+                    )
+                } else {
+                    startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                }
             } else {
                 showLoggedInState()
             }
@@ -215,14 +223,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<Button>(R.id.btnSos).setOnClickListener {
-            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://sos.asu.edu.bh/ords/r/asudss/sos/1"))
-            startActivity(intent)
-        }
-
         findViewById<Button>(R.id.btnSisDashboard).setOnClickListener {
             if (!isNetworkAvailable()) {
-                val hasCache = getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).getString("html", null) != null
                 if (hasCache) {
                     startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
                 } else {
