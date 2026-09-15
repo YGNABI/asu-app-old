@@ -22,7 +22,7 @@
         android:label="ASU Auto Login"
         android:icon="@drawable/asu_logo"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+        android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
         <activity
             android:name=".MainActivity"
             android:exported="true">
