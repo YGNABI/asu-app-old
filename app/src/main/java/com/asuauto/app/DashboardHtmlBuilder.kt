@@ -229,12 +229,21 @@ object DashboardHtmlBuilder {
         sb.append(kvBox(t("الوضع الأكاديمي", "Academic Status"), d.f("academicStatus")))
         sb.append(kvBox(t("متبقي للتخرج", "Remaining to graduate"), "${remainingCoursesCount()} ${t("مادة", "courses")}"))
         sb.append("</div>")
+        
+        // تعديل: إضافة زر التقويم الأكاديمي بجانب أو تحت تواريخ التسجيل
         if (d.f("regStart").isNotBlank() || d.f("addDropStart").isNotBlank()) {
             sb.append("<div class='sep'>")
             if (d.f("regStart").isNotBlank())
                 sb.append("<div class='kv'><span>${t("فترة التسجيل", "Registration period")}</span><span>${esc(d.f("regStart"))} ${t("إلى", "to")} ${esc(d.f("regEnd"))}</span></div>")
             if (d.f("addDropStart").isNotBlank())
                 sb.append("<div class='kv'><span>${t("السحب والإضافة", "Add/Drop period")}</span><span>${esc(d.f("addDropStart"))} ${t("إلى", "to")} ${esc(d.f("addDropEnd"))}</span></div>")
+            
+            // إضافة بطاقة التقويم الأكاديمي الأنيقة
+            sb.append("<div class='cal-banner' onclick='openAcademicCalendar()'>")
+            sb.append("<img src='file:///android_res/drawable/calendar_logo.png' class='cal-icon'/>")
+            sb.append("<span class='cal-text'>${t("التقويم الأكاديمي (2026/2027)", "Academic Calendar (2026/2027)")}</span>")
+            sb.append("</div>")
+            
             sb.append("</div>")
         }
         sb.append("</div>")
@@ -655,6 +664,24 @@ object DashboardHtmlBuilder {
         .spinner {border:4px solid rgba(0,0,0,0.1);width:30px;height:30px;border-radius:50%;border-left-color:#3498db;animation:spin 1s linear infinite;margin:0 auto;}
         @keyframes spin {0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
         #scrollWrap{position:relative;overflow-x:hidden}
+        
+        /* تصميم زر التقويم الأكاديمي الجديد */
+        .cal-banner {
+            display: flex;
+            align-items: center;
+            background: rgba(44, 62, 80, 0.08);
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-top: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        @media (prefers-color-scheme: dark) {
+            .cal-banner { background: rgba(255, 255, 255, 0.08); }
+        }
+        .cal-icon { width: 32px; height: 32px; margin-right: 12px; object-fit: contain; }
+        .cal-text { font-size: 13px; font-weight: bold; color: inherit; flex: 1; }
+        
         </style></head><body>
         <div class="tabs">
         <div class="tab active" onclick="sp(this,'home')">${t("الرئيسية", "Home")}</div>
@@ -690,6 +717,14 @@ object DashboardHtmlBuilder {
             b.style.display='none';
           }
         }
+        
+        // استدعاء دالة التقويم الأكاديمي المرتبطة بـ AndroidBridge
+        function openAcademicCalendar() {
+            if(typeof AndroidBridge !== 'undefined') {
+                AndroidBridge.showAcademicCalendar();
+            }
+        }
+        
         </script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
@@ -927,8 +962,9 @@ object DashboardHtmlBuilder {
         })();
 
         function toggleGpaChart(){
-          var ov=document.getElementById('gpaOv');
-          if(ov) ov.classList.add('show');
+          if(typeof AndroidBridge !== 'undefined') {
+              AndroidBridge.showGpaChart();
+          }
         }
 
         function toMinutesOfDay(t){
