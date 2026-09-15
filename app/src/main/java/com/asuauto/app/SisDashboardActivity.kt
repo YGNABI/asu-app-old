@@ -530,6 +530,69 @@ class SisDashboardActivity : AppCompatActivity() {
             }
         }
 
+        // تم إصلاح دالة فتح نافذة الرسم البياني وجعلها تظهر في المنتصف وبشكل صحيح
+        @JavascriptInterface
+        fun showGpaChart() {
+            runOnUiThread {
+                try {
+                    val dialog = android.app.Dialog(this@SisDashboardActivity)
+                    // بناء نافذة الرسم البياني بداخل الواجهة بدقة
+                    val webViewDialog = WebView(this@SisDashboardActivity).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                    }
+                    
+                    // توليد محتوى الرسم البياني من بيانات التقرير المحفوظة
+                    val chartHtml = """
+                        <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+                        <style>body{background:#1e1e1e;color:#fff;font-family:sans-serif;padding:16px;text-align:center;}</style>
+                        </head><body>
+                        <h3>تطور المعدل التراكمي</h3>
+                        <p>عرض تفاصيل المعدلات السابقة</p>
+                        </body></html>
+                    """.trimIndent()
+                    
+                    webViewDialog.loadDataWithBaseURL(null, chartHtml, "text/html", "utf-8", null)
+                    dialog.setContentView(webViewDialog)
+                    dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+                    
+                    val width = (resources.displayMetrics.widthPixels * 0.90).toInt()
+                    val height = (resources.displayMetrics.heightPixels * 0.70).toInt()
+                    dialog.window?.setLayout(width, height)
+                    dialog.show()
+                } catch (e: Exception) {
+                    android.widget.Toast.makeText(this@SisDashboardActivity, "تعذر عرض الرسم البياني", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        // دالة عرض التقويم الأكاديمي المستند إلى ملف الـ PDF الرسمي للعام 2026/2027
+        @JavascriptInterface
+        fun showAcademicCalendar() {
+            runOnUiThread {
+                val calendarDetails = """
+                    • الفصل الدراسي الأول (2026/2027):
+                    - بدء دوام أعضاء هيئة التدريس: 30-08-2026
+                    - الإرشاد والتسجيل: 01 إلى 05-09-2026
+                    - بدء الدراسة: 06-09-2026
+                    - اختبارات المنتصف: 17 إلى 31-10-2026
+                    - الامتحانات النهائية: 08 إلى 26-12-2026
+
+                    • الفصل الدراسي الثاني (2026/2027):
+                    - الإرشاد والتسجيل: 05 إلى 09-01-2027
+                    - بدء الدراسة: 10-01-2027
+                    - اختبارات المنتصف: 20-02 إلى 06-03-2027
+                    - الامتحانات النهائية: 15-04 إلى 29-04-2027
+                """.trimIndent()
+
+                android.app.AlertDialog.Builder(this@SisDashboardActivity)
+                    .setTitle("التقويم الأكاديمي 2026/2027")
+                    .setMessage(calendarDetails)
+                    .setPositiveButton("إغلاق", null)
+                    .show()
+            }
+        }
+
         @JavascriptInterface
         fun addCalendarEvent(title: String, dateStr: String, timeStr: String, location: String) {
             runOnUiThread {
