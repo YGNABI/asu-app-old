@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
                 buttonsLayout.visibility = View.GONE
                 promptBiometric(
                     onSuccess = { showLoggedInState() },
-                    onFail = { /* stay on setup/login screen */ }
+                    onFail = { }
                 )
             } else {
                 showLoggedInState()
@@ -155,18 +155,24 @@ class MainActivity : AppCompatActivity() {
                 super.onPageFinished(view, url)
                 if (view == null) return
                 
-                // استخراج صورة الطالب تلقائياً إذا كانت موجودة في الصفحة
+                // استخراج الصورة الشخصية الحقيقية بدقة متناهية وتجنب شعار الجامعة
                 view.evaluateJavascript("""
                     (function() {
-                        var img = document.querySelector('img[src*="student"], img.student-img, img[alt*="photo"], .profile img');
-                        if (img && img.src) { return img.src; }
-                        var allImgs = document.getElementsByTagName('img');
-                        for(var i=0; i<allImgs.length; i++) {
-                            if(allImgs[i].src && allImgs[i].src.length > 30 && (allImgs[i].height > 50 || allImgs[i].width > 50)) {
-                                // محاولة التقاط صورة الملف الشخصي المحتملة
-                                if(allImgs[i].src.includes('pjpeg') || allImgs[i].src.includes('jpg') || allImgs[i].src.includes('png')) {
-                                    return allImgs[i].src;
+                        var imgs = document.getElementsByTagName('img');
+                        for(var i=0; i<imgs.length; i++) {
+                            var src = imgs[i].src || '';
+                            var alt = (imgs[i].alt || '').toLowerCase();
+                            var className = (imgs[i].className || '').toLowerCase();
+                            if(src.length > 25 && !src.toLowerCase().includes('logo') && !src.toLowerCase().includes('header') && !src.toLowerCase().includes('asu_logo')) {
+                                if(className.includes('profile') || alt.includes('profile') || alt.includes('photo') || imgs[i].width > 60 || imgs[i].height > 60) {
+                                    return src;
                                 }
+                            }
+                        }
+                        for(var i=0; i<imgs.length; i++) {
+                            var src = imgs[i].src || '';
+                            if(src.length > 30 && !src.toLowerCase().includes('logo')) {
+                                return src;
                             }
                         }
                         return "";
@@ -236,9 +242,7 @@ class MainActivity : AppCompatActivity() {
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 onFail()
             }
-            override fun onAuthenticationFailed() {
-                // allow retry, do nothing
-            }
+            override fun onAuthenticationFailed() {}
         })
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle("تسجيل الدخول بالبصمة")
