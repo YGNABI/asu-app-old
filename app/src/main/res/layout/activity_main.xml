@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F2F3F5">
+    android:background="?android:attr/colorBackground">
 
     <LinearLayout
         android:id="@+id/topBar"
@@ -60,6 +61,7 @@
             android:text="جامعة العلوم التطبيقية"
             android:textStyle="bold"
             android:textSize="16sp"
+            android:textColor="?android:attr/textColorPrimary"
             android:layout_marginTop="8dp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content" />
@@ -77,6 +79,8 @@
             android:hint="الرقم الجامعي"
             android:background="@android:drawable/edit_text"
             android:padding="12dp"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textColorHint="?android:attr/textColorSecondary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
@@ -92,6 +96,8 @@
                 android:background="@android:drawable/edit_text"
                 android:padding="12dp"
                 android:paddingEnd="44dp"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textColorHint="?android:attr/textColorSecondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
 
@@ -100,6 +106,7 @@
                 android:src="@android:drawable/ic_menu_view"
                 android:contentDescription="إظهار كلمة السر"
                 android:padding="10dp"
+                app:tint="?android:attr/textColorSecondary"
                 android:layout_gravity="end|center_vertical"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content" />
@@ -115,13 +122,14 @@
             <CheckBox
                 android:id="@+id/biometricCheckbox"
                 android:text="تفعيل الدخول بالبصمة"
+                android:textColor="?android:attr/textColorPrimary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content" />
         </LinearLayout>
 
         <Button
             android:id="@+id/saveButton"
-            android:text="حفظ البيانات"
+            android:text="حفظ البيانات تسجيل الدخول"
             android:layout_marginTop="10dp"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
@@ -129,7 +137,7 @@
 
     <Button
         android:id="@+id/btnSisDashboard"
-        android:text="لوحة SIS الذكية"
+        android:text="اللوحة الذكية"
         android:layout_marginHorizontal="16dp"
         android:layout_marginTop="12dp"
         android:layout_width="match_parent"
@@ -144,7 +152,7 @@
 
         <Button
             android:id="@+id/btnSos"
-            android:text="SOS"
+            android:text="SOS webview underprocess"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
     </LinearLayout>
