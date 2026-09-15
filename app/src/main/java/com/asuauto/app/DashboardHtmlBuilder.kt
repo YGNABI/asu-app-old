@@ -200,7 +200,7 @@ object DashboardHtmlBuilder {
         sb.append("<div class='avatar' style='background:$avatarBg;color:$avatarFg'>${esc(initials)}</div>")
         sb.append("<div><div class='big'>${esc(name)}</div><div class='muted'>${esc(d.f("studentCollege"))}</div></div></div>")
         if (avatarUrl.isNotBlank()) {
-            sb.append("<img src='${esc(avatarUrl)}' style='width:46px;height:46px;border-radius:50%;object-fit:cover;border:1px solid #ccc'/>")
+            sb.append("<img src='${esc(avatarUrl)}' style='width:48px;height:48px;border-radius:50%;object-fit:cover;border:1.5px solid #d4af37'/>")
         }
         sb.append("</div>")
         sb.append("<div class='grid'>")
@@ -221,14 +221,17 @@ object DashboardHtmlBuilder {
         sb.append("</div>")
 
         val transcriptHistory = mutableListOf<Pair<String, Double>>()
+        var termCounter = 1
         for (row in d.transcript) {
             if (row.size >= 2 && row[0] == "__TERM__") {
                 val text = row[1]
                 val gpa = Regex("GPA\\s+([\\d.]+)").find(text)?.groupValues?.get(1)?.toDoubleOrNull()
                 if (gpa != null) {
-                    var termName = text.substringBefore("Average").substringBefore("المعدل").trim()
-                    if (termName.length > 10) termName = termName.take(10) + ".."
-                    transcriptHistory.add(termName to gpa)
+                    val yearMatch = Regex("20\\d{2}").find(text)?.value ?: "2026"
+                    val shortYear = yearMatch.takeLast(2)
+                    val label = "الفصل $termCounter/$shortYear"
+                    transcriptHistory.add(label to gpa)
+                    termCounter++
                 }
             }
         }
@@ -289,34 +292,34 @@ object DashboardHtmlBuilder {
     private fun gpaChartOverlay(history: List<Pair<String, Double>>): String {
         val sb = StringBuilder()
         sb.append("<div id='gpaOv' class='ov' onclick=\"if(event.target===this) document.getElementById('gpaOv').classList.remove('show')\">")
-        sb.append("<div class='modal'>")
-        sb.append("<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px'>")
-        sb.append("<div class='big'>${t("تطور المعدل التراكمي", "GPA Trend")}</div>")
-        sb.append("<span onclick=\"document.getElementById('gpaOv').classList.remove('show')\" style='cursor:pointer;font-size:20px;line-height:1'>&times;</span>")
+        sb.append("<div class='modal' style='width:94%;max-width:420px;padding:20px'>")
+        sb.append("<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:14px'>")
+        sb.append("<div class='big' style='font-size:16px'>${t("تطور المعدل التراكمي", "GPA Trend")}</div>")
+        sb.append("<span onclick=\"document.getElementById('gpaOv').classList.remove('show')\" style='cursor:pointer;font-size:24px;line-height:1'>&times;</span>")
         sb.append("</div>")
 
         if (history.size < 2) {
-            sb.append("<div class='empty' style='padding:20px 4px'>${t("لا توجد فصول سابقة كافية لرسم منحنى التطور", "Not enough past semesters to draw a trend curve")}</div>")
+            sb.append("<div class='empty' style='padding:20px 4px'>${t("لا توجد فصول سابقة كافية لرسم منحنى التطور", "Not enough past semesters")}</div>")
         } else {
-            val w = 340.0; val h = 200.0; val padL = 36.0; val padR = 15.0; val padT = 15.0; val padB = 45.0
-            val minV = 60.0; val maxV = 100.0
+            val w = 400.0; val h = 260.0; val padL = 45.0; val padR = 25.0; val padT = 20.0; val padB = 75.0
+            val minV = 50.0; val maxV = 100.0
             val span = maxV - minV
             val n = history.size
 
             fun xAt(i: Int) = padL + (w - padL - padR) * i / (n - 1).coerceAtLeast(1)
             fun yAt(v: Double) = padT + (h - padT - padB) * (1.0 - ((v - minV) / span))
 
-            sb.append("<svg viewBox='0 0 $w $h' width='100%' height='200' preserveAspectRatio='xMidYMid meet'>")
+            sb.append("<svg viewBox='0 0 $w $h' width='100%' height='260' preserveAspectRatio='xMidYMid meet'>")
             
-            val steps = 4
+            val steps = 5
             for (s in 0..steps) {
                 val v = minV + (span * s / steps)
                 val y = yAt(v)
-                sb.append("<line x1='$padL' y1='$y' x2='${w - padR}' y2='$y' stroke='#e0e0e0' stroke-width='0.8' stroke-dasharray='2,2'/>")
-                sb.append("<text x='${padL - 4}' y='${y + 3}' font-size='8' fill='#888' text-anchor='end'>${v.toInt()}</text>")
+                sb.append("<line x1='$padL' y1='$y' x2='${w - padR}' y2='$y' stroke='#dcdcdc' stroke-width='1'/>")
+                sb.append("<text x='${padL - 6}' y='${y + 4}' font-size='11' fill='#555' font-weight='bold' text-anchor='end'>${v.toInt()}</text>")
             }
-            sb.append("<line x1='$padL' y1='$padT' x2='$padL' y2='${h - padB}' stroke='#888' stroke-width='1.2'/>")
-            sb.append("<line x1='$padL' y1='${h - padB}' x2='${w - padR}' y2='${h - padB}' stroke='#888' stroke-width='1.2'/>")
+            sb.append("<line x1='$padL' y1='$padT' x2='$padL' y2='${h - padB}' stroke='#444' stroke-width='2'/>")
+            sb.append("<line x1='$padL' y1='${h - padB}' x2='${w - padR}' y2='${h - padB}' stroke='#444' stroke-width='2'/>")
 
             val pts = history.mapIndexed { i, pair -> xAt(i) to yAt(pair.second) }
             
@@ -324,20 +327,21 @@ object DashboardHtmlBuilder {
                 val p1 = pts[i]; val p2 = pts[i + 1]
                 val v1 = history[i].second; val v2 = history[i + 1].second
                 val lineColor = if (v2 >= v1) "#27ae60" else "#e74c3c"
-                sb.append("<line x1='${p1.first}' y1='${p1.second}' x2='${p2.first}' y2='${p2.second}' stroke='$lineColor' stroke-width='3' stroke-linecap='round'/>")
+                sb.append("<line x1='${p1.first}' y1='${p1.second}' x2='${p2.first}' y2='${p2.second}' stroke='$lineColor' stroke-width='4' stroke-linecap='round'/>")
             }
 
             pts.forEachIndexed { i, p ->
                 val v1 = history[i].second
                 val prevV = if (i > 0) history[i-1].second else v1
                 val dotColor = if (v1 >= prevV) "#27ae60" else "#e74c3c"
-                sb.append("<circle cx='${p.first}' cy='${p.second}' r='4' fill='$dotColor'/>")
+                sb.append("<circle cx='${p.first}' cy='${p.second}' r='6' fill='$dotColor' stroke='#fff' stroke-width='2'/>")
             }
 
+            // أسماء الفصول بخط واضح ومقروء بصيغة الفصل 1/2026 بخط كبير وواضح
             history.forEachIndexed { i, pair ->
                 val px = pts[i].first
-                val py = h - padB + 10
-                sb.append("<text x='$px' y='$py' font-size='8' fill='#666' text-anchor='end' transform='rotate(-35,$px,$py)'>${esc(pair.first)}</text>")
+                val py = h - padB + 16
+                sb.append("<text x='$px' y='$py' font-size='11' fill='#222' font-weight='bold' text-anchor='end' transform='rotate(-35,$px,$py)'>${esc(pair.first)}</text>")
             }
             sb.append("</svg>")
         }
@@ -538,73 +542,63 @@ object DashboardHtmlBuilder {
         <html dir="$dir" lang="$langCode"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
-        :root {
-            --bg-color: #f2f3f5;
-            --card-bg: #fff;
-            --text-main: #1a1a1a;
-            --text-muted: #888;
-            --border-color: #f0f0f0;
-            --tab-bg: #2c3e50;
-            --tab-active: #34495e;
-        }
+        body{font-family:sans-serif;background:#f2f3f5;color:#1a1a1a;margin:0}
         @media (prefers-color-scheme: dark) {
-            :root {
-                --bg-color: #121212;
-                --card-bg: #1e1e1e;
-                --text-main: #e0e0e0;
-                --text-muted: #aaa;
-                --border-color: #2c2c2c;
-                --tab-bg: #1f2c34;
-                --tab-active: #2c3e50;
-            }
+            body { background:#121212 !important; color:#e0e0e0 !important; }
+            .card, .list, .pcard, .modal { background:#1e1e1e !important; color:#e0e0e0 !important; }
+            .row, .arow { background:#1e1e1e !important; border-bottom-color:#2c2c2c !important; }
+            .rowTitle, .big, .val { color:#e0e0e0 !important; }
+            .muted, .lbl, .rowSub, .codeTag { color:#aaa !important; }
+            .cat { background:#2c2c2c !important; color:#fff !important; }
+            .chip { background:#2c2c2c !important; color:#ddd !important; }
+            .chip.active { background:#3498db !important; color:#fff !important; }
         }
-        body{font-family:sans-serif;background:var(--bg-color);color:var(--text-main);margin:0}
-        .tabs{display:flex;position:sticky;top:0;background:var(--tab-bg);z-index:20}
+        .tabs{display:flex;position:sticky;top:0;background:#2c3e50;z-index:20}
         .tab{flex:1;text-align:center;padding:12px 2px;color:#fff;font-size:12px;cursor:pointer}
-        .tab.active{background:var(--tab-active);border-bottom:3px solid #3498db}
+        .tab.active{background:#34495e;border-bottom:3px solid #3498db}
         .page{display:none;padding:12px}
         .page.active{display:block}
-        .card{background:var(--card-bg);border-radius:12px;padding:14px;margin-bottom:10px}
+        .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px}
         .honor-gold{background:linear-gradient(135deg,#fcf4d9 0%,#e8c96b 50%,#d4af37 100%) !important;border:1px solid #d4af37;color:#333 !important}
         .honor-gold .muted,.honor-gold .lbl{color:#5a4a15 !important}
         .honor-silver{background:linear-gradient(135deg,#f4f5f6 0%,#d5d7d9 50%,#aeb1b3 100%) !important;border:1px solid #aeb1b3;color:#333 !important}
         .honor-silver .muted,.honor-silver .lbl{color:#4a4d4f !important}
         .avatar{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold}
         .big{font-size:15px;font-weight:bold}
-        .muted{font-size:12px;color:var(--text-muted)}
+        .muted{font-size:12px;color:#888}
         .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:10px}
-        .lbl{font-size:10px;color:var(--text-muted)}
+        .lbl{font-size:10px;color:#999}
         .val{font-size:14px}
-        .sep{border-top:1px solid var(--border-color);margin-top:10px;padding-top:8px}
+        .sep{border-top:1px solid #eee;margin-top:10px;padding-top:8px}
         .kv{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
-        .list{background:var(--card-bg);border-radius:12px;overflow:hidden}
-        .row,.arow{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border-color);cursor:pointer;background:var(--card-bg)}
+        .list{background:#fff;border-radius:12px;overflow:hidden}
+        .row,.arow{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #f0f0f0;cursor:pointer}
         .row:last-child,.arow:last-child{border-bottom:none}
         .rowTitle{font-size:14px;font-weight:bold}
-        .codeTag{font-size:10px;color:var(--text-muted);font-weight:normal}
-        .rowSub{font-size:11px;color:var(--text-muted);margin-top:3px}
+        .codeTag{font-size:10px;color:#aaa;font-weight:normal}
+        .rowSub{font-size:11px;color:#888;margin-top:3px}
         .circle{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold}
-        .pcard{background:var(--card-bg);border-radius:8px;padding:11px 12px;margin-bottom:8px}
-        .cat{background:var(--border-color);border-radius:8px;padding:9px 12px;margin:14px 0 8px}
+        .pcard{background:#fff;border-radius:8px;padding:11px 12px;margin-bottom:8px}
+        .cat{background:#e3e8ee;border-radius:8px;padding:9px 12px;margin:14px 0 8px}
         .catName{font-size:13px;font-weight:bold}
-        .catStats{font-size:11px;color:var(--text-muted);margin-top:3px}
-        .term{background:var(--tab-bg);color:#fff;padding:8px 10px;border-radius:6px;margin:14px 0 8px;font-size:12px}
-        .legend,.legend2{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--text-muted);margin-bottom:10px}
+        .catStats{font-size:11px;color:#666;margin-top:3px}
+        .term{background:#2c3e50;color:#fff;padding:8px 10px;border-radius:6px;margin:14px 0 8px;font-size:12px}
+        .legend,.legend2{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:#777;margin-bottom:10px}
         .legend i,.legend2 i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:4px}
         .filters{display:flex;gap:6px;margin-bottom:10px}
-        .chip{background:var(--border-color);border-radius:14px;padding:6px 14px;font-size:12px;cursor:pointer}
+        .chip{background:#e6e6e6;border-radius:14px;padding:6px 14px;font-size:12px;cursor:pointer}
         .chip.active{background:#3498db;color:#fff}
-        .empty{text-align:center;color:var(--text-muted);padding:40px 10px}
+        .empty{text-align:center;color:#aaa;padding:40px 10px}
         .gold{background:#caa23e;color:#fff;font-size:11px;padding:3px 10px;border-radius:12px}
         .pill{color:#fff;font-size:10px;padding:2px 9px;border-radius:10px}
-        .emailBtn{display:inline-block;margin-top:6px;background:#0078d4;color:#fff;font-size:11px;padding:6px 12px;border-radius:8px;cursor:pointer;text-decoration:none}
-        .calBtn{display:inline-block;margin-top:6px;background:#eef4fb;color:#2c6cb0;font-size:11px;padding:5px 10px;border-radius:8px;cursor:pointer}
+        .emailIconBtn{display:inline-flex;align-items:center;justify-content:center;background:#0078d4;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;margin-right:8px;vertical-align:middle;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px}
+        .calBtn{display:block;width:100%;text-align:center;margin-top:8px;background:#1D9E75;color:#fff;font-size:13px;font-weight:bold;padding:10px;border-radius:8px;cursor:pointer;box-sizing:border-box}
         .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
         .ov.show{display:flex}
-        .modal{background:var(--card-bg);color:var(--text-main);border-radius:14px;padding:16px;width:86%;max-width:340px}
+        .modal{background:#fff;border-radius:14px;padding:16px;width:86%;max-width:340px}
         .row.rowActive{background:#EAF3DE;border-right:4px solid #3B6D11}
         .row.rowActive .rowTitle{color:#2c5b0e}
-        .activeBanner{position:fixed;left:12px;right:12px;bottom:14px;background:var(--tab-bg);color:#fff;border-radius:14px;padding:12px 16px;display:none;align-items:center;justify-content:space-between;z-index:90;box-shadow:0 4px 14px rgba(0,0,0,.25);touch-action:none}
+        .activeBanner{position:fixed;left:12px;right:12px;bottom:14px;background:#2c3e50;color:#fff;border-radius:14px;padding:12px 16px;display:none;align-items:center;justify-content:space-between;z-index:90;box-shadow:0 4px 14px rgba(0,0,0,.25);touch-action:none}
         .activeBanner.show{display:flex}
         .activeBannerHandle{width:34px;height:4px;background:rgba(255,255,255,.4);border-radius:3px;position:absolute;top:6px;left:50%;transform:translateX(-50%)}
         .activeBannerText{width:100%;padding-top:6px}
@@ -626,15 +620,13 @@ object DashboardHtmlBuilder {
         val calLblExams = t("أضف مواعيد الامتحانات للتقويم", "Add Exams to Calendar")
         val materialsLbl = t("عرض المادة التعليمية", "View Course Materials")
         val assessmentsLbl = t("عرض الواجبات والبحوث", "View Assignments & Research")
-        val emailLbl = t("إرسال عبر Outlook", "Send via Outlook")
-        val outlookMissingMsg = t("تطبيق Microsoft Outlook غير متوفر في جهازك. يرجى تثبيته من متجر التطبيقات لإرسال البريد.", "Microsoft Outlook is not installed. Please install it from the app store to send emails.")
         val lSection = t("الشعبة", "Section"); val lTeacher = t("المدرس", "Instructor")
         val lMidGrade = t("علامة المنتصف", "Midterm Grade"); val lWork = t("أعمال أخرى", "Other Work")
         val lFinGrade = t("علامة الامتحان النهائي", "Final Exam Grade"); val lTotal = t("المجموع", "Total")
         val lMidExam = t("امتحان المنتصف", "Midterm Exam"); val lFinExam = t("الامتحان النهائي", "Final Exam")
         val lCode = t("رمز المقرر", "Course Code")
         return """
-        <script>var CALLBL="$calLbl",CALLBL_EXAMS="$calLblExams",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",EMAILLBL="$emailLbl",OUTLOOK_MISSING="$outlookMissingMsg",ROOMLBL="${t("القاعة", "Room")}";</script>
+        <script>var CALLBL="$calLbl",CALLBL_EXAMS="$calLblExams",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",ROOMLBL="${t("القاعة", "Room")}";</script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
         <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
@@ -675,7 +667,7 @@ object DashboardHtmlBuilder {
           document.getElementById('ms').textContent=v(c.s);
           document.getElementById('mi').textContent=v(c.i);
           
-          var emailHtml = c.i && c.i !== '-' ? "<span class='emailBtn' onclick=\"openOutlookEmail('"+c.i+"','"+c.n+"')\">&#9993; " + EMAILLBL + "</span>" : '';
+          var emailHtml = c.i && c.i !== '-' ? "<span class='emailIconBtn' onclick=\"openOutlookEmail('"+c.i+"','"+c.n+"')\" title='إرسال رسالة'>&#9993;</span>" : '';
           document.getElementById('mEmailBtn').innerHTML = emailHtml;
           
           document.getElementById('mmg').textContent=v(c.mg);
@@ -686,12 +678,12 @@ object DashboardHtmlBuilder {
           document.getElementById('mfe').textContent=c.fd?(c.fd+' — '+c.ft+(c.fr?' — '+c.fr:'')):'-';
           var btnsHtml='';
           if(c.md || c.fd) {
-              btnsHtml+="<span class='calBtn' style='background:#1D9E75;color:#fff;display:block;text-align:center;padding:10px;font-size:13px;font-weight:bold;margin-bottom:8px' onclick=\"addAllExamsToCal('"+c.n+"','"+c.md+"','"+c.mtr+"','"+c.mr+"','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+CALLBL_EXAMS+"</span>";
+              btnsHtml+="<span class='calBtn' onclick=\"addAllExamsToCal('"+c.n+"','"+c.md+"','"+c.mtr+"','"+c.mr+"','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+CALLBL_EXAMS+"</span>";
           }
           document.getElementById('mCalBtns').innerHTML=btnsHtml;
-          var matHtml = c.mid ? "<span class='calBtn' onclick=\"openCourseMaterials('"+c.mid+"','"+c.n+"')\">"+MATERIALSLBL+"</span>" : '';
+          var matHtml = c.mid ? "<span class='calBtn' style='background:#2c3e50' onclick=\"openCourseMaterials('"+c.mid+"','"+c.n+"')\">"+MATERIALSLBL+"</span>" : '';
           document.getElementById('mMaterialsBtn').innerHTML = matHtml;
-          var assHtml = c.mid ? "<span class='calBtn' onclick=\"openCourseAssessments('"+c.mid+"','"+c.n+"','"+c.md+"','"+c.mtr+"','"+c.mr+"','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+ASSESSMENTSLBL+"</span>" : '';
+          var assHtml = c.mid ? "<span class='calBtn' style='background:#34495e' onclick=\"openCourseAssessments('"+c.mid+"','"+c.n+"','"+c.md+"','"+c.mtr+"','"+c.mr+"','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+ASSESSMENTSLBL+"</span>" : '';
           document.getElementById('mAssessmentsBtn').innerHTML = assHtml;
           document.getElementById('ov').classList.add('show');
         }
@@ -699,8 +691,6 @@ object DashboardHtmlBuilder {
         function openOutlookEmail(instructorName, courseName) {
           if(typeof AndroidBridge !== 'undefined') {
             AndroidBridge.openOutlook(instructorName, courseName);
-          } else {
-            alert(OUTLOOK_MISSING);
           }
         }
 
@@ -816,29 +806,4 @@ object DashboardHtmlBuilder {
 
         (function(){
           var banner=document.getElementById('activeBanner');
-          if(!banner) return;
-          var startY=null, currentY=0;
-          banner.addEventListener('touchstart',function(e){
-            startY=e.touches[0].clientY; currentY=0;
-          },{passive:true});
-          banner.addEventListener('touchmove',function(e){
-            if(startY===null) return;
-            var dy=e.touches[0].clientY-startY;
-            if(dy>0){ currentY=dy; banner.style.transform='translateY('+dy+'px)'; }
-          },{passive:true});
-          banner.addEventListener('touchend',function(){
-            if(currentY>40){
-              banner.classList.remove('show');
-              dismissedCode=lastActiveCode;
-            }
-            banner.style.transform='';
-            startY=null; currentY=0;
-          });
-        })();
-
-        checkCurrentClass();
-        setInterval(checkCurrentClass, 30000);
-        </script></body></html>
-        """.trimIndent()
-    }
-}
+          ...
