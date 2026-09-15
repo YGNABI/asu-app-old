@@ -200,7 +200,6 @@ object DashboardHtmlBuilder {
         val initials = name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }
         var avatarUrl = d.f("studentAvatar")
         
-        // تعديل الصورة لتأخذ المسار الكامل إذا كان الرابط نسبي
         if (avatarUrl.isNotBlank() && !avatarUrl.startsWith("http")) {
             avatarUrl = "https://sis.asu.edu.bh/$avatarUrl"
         }
@@ -232,7 +231,6 @@ object DashboardHtmlBuilder {
         }
         sb.append("</div>")
 
-        // ترتيب الفصول برمجياً لتبدأ من الأقدم إلى الأحدث
         val termsList = mutableListOf<Pair<String, Double>>()
         for (row in d.transcript) {
             if (row.size >= 2 && row[0] == "__TERM__") {
@@ -245,7 +243,7 @@ object DashboardHtmlBuilder {
                 }
             }
         }
-        val chronologicalTerms = termsList.reversed() // عكس المصفوفة لتكون الأقدم يساراً
+        val chronologicalTerms = termsList.reversed()
         val transcriptHistory = chronologicalTerms.mapIndexed { index, pair ->
             "الفصل ${index + 1}/${pair.first}" to pair.second
         }
@@ -465,7 +463,7 @@ object DashboardHtmlBuilder {
         }
 
         sb.append("<div class='legend2'>")
-        listOf("#1D9E75" to "٩٠-١٠٠", "#0F6E56" to "٨٠-٨9", "#378ADD" to "٧٠-٧9", "#BA7517" to "٦٠-٦9", "#E24B4A" to "٥٠-٥9", "#1a1a1a" to t("أقل من ٥٠", "Below 50"))
+        listOf("#1D9E75" to "٩٠-١٠٠", "#0F6E56" to "٨٠-٨٩", "#378ADD" to "٧٠-٧٩", "#BA7517" to "٦٠-٦٩", "#E24B4A" to "٥٠-٥٩", "#1a1a1a" to t("أقل من ٥٠", "Below 50"))
             .forEach { (col, lbl) -> sb.append("<span><i style='background:$col'></i>$lbl</span>") }
         sb.append("</div>")
         sb.append("<div class='filters'><div class='chip' onclick=\"fg(this,'all')\">${t("الكل", "All")}</div><div class='chip active' onclick=\"fg(this,'sem')\">${t("حسب الفصل", "By Semester")}</div></div>")
@@ -672,24 +670,41 @@ object DashboardHtmlBuilder {
         <script>
         var startY=0;
         var currentY=0;
-        document.body.addEventListener('touchstart',function(e){
-          if(window.scrollY<=0) startY=e.touches[0].clientY;
-        },{passive:true});
+        var isPulling=false;
         
-        document.body.addEventListener('touchmove',function(e){
-          if(startY>0) {
-            currentY=e.touches[0].clientY-startY;
+        document.addEventListener('touchstart',function(e){
+          if(window.scrollY<=0) {
+            startY=e.touches[0].clientY;
+            document.body.style.transition='none';
           }
         },{passive:true});
         
-        document.body.addEventListener('touchend',function(e){
-          if(window.scrollY<=0 && startY>0 && currentY>130){
-            document.getElementById('refreshSpinner').style.display='block';
-            if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
+        document.addEventListener('touchmove',function(e){
+          if(startY>0 && window.scrollY<=0) {
+            var y=e.touches[0].clientY;
+            if(y > startY) {
+              isPulling=true;
+              currentY=y-startY;
+              var pullDist=currentY*0.4;
+              document.body.style.transform='translateY('+pullDist+'px)';
+            }
+          }
+        },{passive:true});
+        
+        document.addEventListener('touchend',function(e){
+          if(isPulling) {
+            document.body.style.transition='transform 0.3s ease-out';
+            document.body.style.transform='translateY(0px)';
+            if(currentY>160){
+              document.getElementById('refreshSpinner').style.display='block';
+              if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
+            }
           }
           startY=0; 
           currentY=0;
+          isPulling=false;
         });
+
         function sp(el,id){
           document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
           document.getElementById(id).classList.add('active');
