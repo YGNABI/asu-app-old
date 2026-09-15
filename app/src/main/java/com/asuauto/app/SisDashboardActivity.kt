@@ -172,18 +172,32 @@ class SisDashboardActivity : AppCompatActivity() {
         }
     """.trimIndent()
 
+    private fun logoBase64(): String {
+        val bmp = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.asu_logo)
+        val baos = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
+        return android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+    }
+
     private fun showAnimatedLoader() {
         progressLayout.visibility = View.GONE
         resultWebView.visibility = View.VISIBLE
         val loaderHtml = """
             <html dir="rtl"><body style="display:flex;align-items:center;justify-content:center;background:#f2f3f5;height:100vh;margin:0;">
             <div style="text-align:center;">
-                <div style="position:relative;width:120px;height:120px;border-radius:50%;background:#e0e0e0;margin:0 auto;overflow:hidden;box-shadow:inset 0 2px 10px rgba(0,0,0,0.1);">
-                    <div id="fill" style="position:absolute;bottom:0;left:0;width:100%;height:0%;background:#1D9E75;transition:height 0.4s ease-out;"></div>
-                    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2;color:#fff;font-family:sans-serif;font-weight:bold;font-size:32px;text-shadow:0 1px 3px rgba(0,0,0,0.3);">ASU</div>
+                <div style="position:relative;width:140px;height:140px;border-radius:50%;background:#e9eaec;margin:0 auto;overflow:hidden;box-shadow:inset 0 2px 10px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;">
+                    <div id="ring" style="position:absolute;inset:0;border-radius:50%;background:conic-gradient(#1D9E75 0deg,#1D9E75 0deg,transparent 0deg);transition:background 0.4s ease-out;"></div>
+                    <div style="position:absolute;inset:6px;border-radius:50%;background:#f2f3f5;"></div>
+                    <img id="logo" src="data:image/png;base64,${logoBase64()}" style="position:relative;width:65%;height:65%;object-fit:contain;opacity:0.12;transition:opacity 0.4s ease-out;"/>
                 </div>
             </div>
-            <script>function setProgress(p){document.getElementById('fill').style.height=p+'%';}</script>
+            <script>
+                function setProgress(p){
+                    document.getElementById('logo').style.opacity = 0.12 + 0.88 * (p/100);
+                    var deg = (p/100) * 360;
+                    document.getElementById('ring').style.background = 'conic-gradient(#1D9E75 ' + deg + 'deg, transparent ' + deg + 'deg)';
+                }
+            </script>
             </body></html>
         """.trimIndent()
         resultWebView.loadDataWithBaseURL(null, loaderHtml, "text/html", "utf-8", null)
@@ -292,6 +306,12 @@ class SisDashboardActivity : AppCompatActivity() {
                         phase = "page1"
                     }
                     "page1" -> {
+                        view.evaluateJavascript("""
+                            (function(){
+                                var img = document.querySelector('img[src*="apex_util.get_blob"]');
+                                if (img) { AndroidBridge.txt('studentAvatarFresh', img.src); }
+                            })();
+                        """.trimIndent(), null)
                         view.evaluateJavascript("AndroidBridge.txt('studentName', getField('Name'));", null)
                         view.evaluateJavascript("AndroidBridge.txt('studentCollege', getField('The College'));", null)
                         view.evaluateJavascript("AndroidBridge.txt('studentGpa', getField('المعدل التراكمي'));", null)
@@ -566,9 +586,11 @@ class SisDashboardActivity : AppCompatActivity() {
         DataStore.planDetails = details
 
         val prefs = getSharedPreferences("asu_prefs", MODE_PRIVATE)
-        val avatarUrl = prefs.getString("student_avatar", "") ?: ""
+        val freshAvatarUrl = DataStore.fields["studentAvatarFresh"] ?: ""
+        val avatarUrl = if (freshAvatarUrl.isNotBlank()) freshAvatarUrl else (prefs.getString("student_avatar", "") ?: "")
         if (avatarUrl.isNotBlank()) {
             DataStore.fields["studentAvatar"] = avatarUrl
+            prefs.edit().putString("student_avatar", avatarUrl).apply()
         }
 
         val moodleCourses = mutableListOf<CourseSummary>()

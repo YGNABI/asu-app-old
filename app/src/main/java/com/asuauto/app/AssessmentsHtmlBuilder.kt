@@ -63,8 +63,6 @@ object AssessmentsHtmlBuilder {
                 sb.append("<div class='itemName'>${esc(item.name)}</div>")
                 if (item.dueDateRaw.isNotBlank()) {
                     sb.append("<div class='dueRow'>${t("آخر موعد للتسليم", "Due")}: ${esc(item.dueDateRaw)}</div>")
-                } else {
-                    sb.append("<div class='dueRowNone'>${t("لا يوجد موعد تسليم محدد", "No due date set")}</div>")
                 }
                 if (item.instructionsText.isNotBlank()) {
                     sb.append("<div class='instructions'>${esc(item.instructionsText)}</div>")
