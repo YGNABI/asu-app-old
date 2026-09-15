@@ -299,18 +299,17 @@ object DashboardHtmlBuilder {
             sb.append("<div class='empty' style='padding:20px 4px'>${t("لا توجد فصول سابقة كافية لرسم منحنى التطور", "Not enough past semesters to draw a trend curve")}</div>")
         } else {
             val w = 320.0; val h = 180.0; val padL = 36.0; val padR = 12.0; val padT = 15.0; val padB = 30.0
-            val values = history.map { second -> second }
-            var minV = (values.min() - 2.0).coerceAtLeast(50.0)
-            var maxV = (values.max() + 2.0).coerceAtMost(100.0)
+            val values = history.map { it.second }
+            val minV = 60.0
+            val maxV = 100.0
+            val span = maxV - minV
             val n = history.size
-            val span = (maxV - minV).let { if (it == 0.0) 1.0 else it }
 
             fun xAt(i: Int) = padL + (w - padL - padR) * i / (n - 1).coerceAtLeast(1)
-            fun yAt(v: Double) = padT + (h - padT - padB) * (1 - (v - minV) / span)
+            fun yAt(v: Double) = padT + (h - padT - padB) * (1.0 - ((v - minV) / span))
 
             sb.append("<svg viewBox='0 0 $w $h' width='100%' height='180' preserveAspectRatio='xMidYMid meet'>")
             
-            // رسم المحاور (X و Y) والخطوط الإرشادية للنسب
             val steps = 4
             for (s in 0..steps) {
                 val v = minV + (span * s / steps)
@@ -324,17 +323,17 @@ object DashboardHtmlBuilder {
             val pts = history.mapIndexed { i, pair -> xAt(i) to yAt(pair.second) }
             val path = StringBuilder("M${pts[0].first},${pts[0].second} ")
             for (i in 0 until pts.size - 1) {
-                val p1 = pts[i]; val p2 = pts[i + 1]
+                val p2 = pts[i + 1]
                 path.append("L${p2.first},${p2.second} ")
             }
 
             sb.append("<path d='$path' fill='none' stroke='#3498db' stroke-width='2.5' stroke-linecap='round'/>")
-            pts.forEachIndexed { i, p ->
+            pts.forEach { p ->
                 sb.append("<circle cx='${p.first}' cy='${p.second}' r='3.5' fill='#2980b9'/>")
             }
             history.forEachIndexed { i, pair ->
                 val px = pts[i].first
-                sb.append("<text x='$px' y='${h - padB + 12}' font-size='8' fill='#666' text-anchor='middle' transform='rotate(-20,$px,${h - padB + 12}'>${esc(pair.first)}</text>")
+                sb.append("<text x='$px' y='${h - padB + 12}' font-size='8' fill='#666' text-anchor='middle'>${esc(pair.first)}</text>")
             }
             sb.append("</svg>")
         }
