@@ -233,7 +233,6 @@ class SisDashboardActivity : AppCompatActivity() {
         planNames.clear()
         rawTables.clear()
         accountPageIndex = 0
-        DataStore.reset()
         DebugLog.reset()
 
         showAnimatedLoader()
@@ -268,17 +267,15 @@ class SisDashboardActivity : AppCompatActivity() {
 
         val prefs = getSharedPreferences("asu_prefs", MODE_PRIVATE)
 
-        // The offline banner used to be baked into the dashboard HTML at the
-        // moment it was generated — but that only ever happens right after a
-        // successful scrape, which requires being online, so the banner was
-        // essentially always absent from the saved HTML. Viewing that same
-        // cached HTML later while actually offline never showed it, because
-        // it's a static string from the past, not something re-evaluated on
-        // each display. Now the banner is always present in the markup
-        // (hidden by default) and this WebViewClient sets its real state
-        // every time a page finishes loading — cached or freshly built —
-        // using the network status at that exact moment.
         resultWebView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                val urlStr = request?.url?.toString() ?: ""
+                if (urlStr.contains("login") || urlStr.contains("signin") || urlStr.contains("redirect")) {
+                    return true
+                }
+                return super.shouldOverrideUrlLoading(view, request)
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 val offlineNow = !isNetworkAvailable()
@@ -309,6 +306,10 @@ class SisDashboardActivity : AppCompatActivity() {
         val pass = prefs.getString("password", "") ?: ""
 
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                return false
+            }
+
             override fun onPageFinished(view: WebView, url: String?) {
                 super.onPageFinished(view, url)
                 view.evaluateJavascript(JS_LIB, null)
@@ -341,6 +342,9 @@ class SisDashboardActivity : AppCompatActivity() {
                         view.evaluateJavascript("AndroidBridge.checkLogin(stillOnLogin());", null)
                         if (sessionId.isEmpty()) return
                         updateLoaderProgress(20)
+                        
+                        DataStore.reset()
+
                         view.loadUrl(pageUrl(1))
                         phase = "page1"
                     }
@@ -348,7 +352,17 @@ class SisDashboardActivity : AppCompatActivity() {
                         view.evaluateJavascript("""
                             (function(){
                                 var img = document.querySelector('img[src*="apex_util.get_blob"]');
-                                if (img) { AndroidBridge.txt('studentAvatarFresh', img.src); }
+                                if (img) { 
+                                    fetch(img.src)
+                                    .then(res => res.blob())
+                                    .then(blob => {
+                                        var reader = new FileReader();
+                                        reader.onloadend = function() { AndroidBridge.txt('studentAvatarFresh', reader.result); }
+                                        reader.readAsDataURL(blob);
+                                    }).catch(e => {
+                                        AndroidBridge.txt('studentAvatarFresh', img.src);
+                                    });
+                                }
                             })();
                         """.trimIndent(), null)
                         view.evaluateJavascript("AndroidBridge.txt('studentName', getField('Name'));", null)
@@ -493,8 +507,14 @@ class SisDashboardActivity : AppCompatActivity() {
             if (failed && phase != "done" && phase != "failed") {
                 phase = "failed"
                 runOnUiThread {
-                    android.widget.Toast.makeText(this@SisDashboardActivity, "جلسة منتهية، يرجى إعادة الدخول", android.widget.Toast.LENGTH_SHORT).show()
-                    finish()
+                    val cached = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).getString("html", null)
+                    if (cached != null) {
+                        progressLayout.visibility = View.GONE
+                        resultWebView.visibility = View.VISIBLE
+                        resultWebView.loadDataWithBaseURL("https://sis.asu.edu.bh/", cached, "text/html", "utf-8", null)
+                    } else {
+                        finish()
+                    }
                 }
             }
         }
@@ -601,12 +621,6 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private var pullLogoCache: String? = null
 
-    /**
-     * bar_logo.jpg (added to res/drawable) shown faint behind the pull-to-
-     * refresh curve. Encoded once per process and reused — this drawable is
-     * small and doesn't change, so there's no need to re-read/re-encode it
-     * on every dashboard build.
-     */
     private fun pullLogoBase64Cached(): String {
         pullLogoCache?.let { return it }
         return try {
@@ -678,7 +692,6 @@ class SisDashboardActivity : AppCompatActivity() {
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).putInt("version", CACHE_VERSION).apply()
         
-        // التعديل هنا: تمرير رابط الجامعة كأساس عشان تشتغل الكوكيز حقت صورة الملف الشخصي
         resultWebView.loadDataWithBaseURL("https://sis.asu.edu.bh/", html, "text/html", "utf-8", null)
     }
 
