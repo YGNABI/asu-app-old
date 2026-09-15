@@ -106,7 +106,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         logoutTop.setOnClickListener {
-            prefs.edit().remove("username").remove("password").remove("biometric_enabled").remove("gpa_history").apply()
+            prefs.edit().remove("username").remove("password").remove("biometric_enabled").remove("gpa_history").remove("student_avatar").apply()
             android.webkit.CookieManager.getInstance().removeAllCookies(null)
             android.webkit.CookieManager.getInstance().flush()
             getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).edit().clear().apply()
@@ -154,6 +154,30 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 if (view == null) return
+                
+                // استخراج صورة الطالب تلقائياً إذا كانت موجودة في الصفحة
+                view.evaluateJavascript("""
+                    (function() {
+                        var img = document.querySelector('img[src*="student"], img.student-img, img[alt*="photo"], .profile img');
+                        if (img && img.src) { return img.src; }
+                        var allImgs = document.getElementsByTagName('img');
+                        for(var i=0; i<allImgs.length; i++) {
+                            if(allImgs[i].src && allImgs[i].src.length > 30 && (allImgs[i].height > 50 || allImgs[i].width > 50)) {
+                                // محاولة التقاط صورة الملف الشخصي المحتملة
+                                if(allImgs[i].src.includes('pjpeg') || allImgs[i].src.includes('jpg') || allImgs[i].src.includes('png')) {
+                                    return allImgs[i].src;
+                                }
+                            }
+                        }
+                        return "";
+                    })();
+                """.trimIndent()) { imgSrc ->
+                    if (!imgSrc.isNullOrBlank() && imgSrc != "\"\"") {
+                        val cleanUrl = imgSrc.removeSurrounding("\"")
+                        prefs.edit().putString("student_avatar", cleanUrl).apply()
+                    }
+                }
+
                 val user = prefs.getString("username", "") ?: ""
                 val pass = prefs.getString("password", "") ?: ""
                 if (user.isEmpty() || pass.isEmpty()) return
@@ -174,20 +198,12 @@ class MainActivity : AppCompatActivity() {
                 """.trimIndent()
                 view.evaluateJavascript(js, null)
 
-                // If this page load was the elearning warm-up we kicked off before opening
-                // the SIS dashboard, wait to see whether we actually landed on the logged-in
-                // dashboard (no password field) before launching the activity — this is what
-                // replaces SisDashboardActivity's own separate (and unreliable — it was
-                // tripping Moodle's login-attempt throttling) login attempt. One login, one
-                // place, done before the dashboard ever opens.
                 if (pendingSisDashboardLaunch) {
                     stillOnAnyLoginPage(view) { stillOnLogin ->
                         if (!stillOnLogin) {
                             pendingSisDashboardLaunch = false
                             startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
                         }
-                        // If still on the login page, just wait for the next onPageFinished
-                        // (the submit above will trigger it) — no manual retry loop here.
                     }
                 }
             }
