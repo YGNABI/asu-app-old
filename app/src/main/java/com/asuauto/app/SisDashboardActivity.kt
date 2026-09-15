@@ -662,3 +662,37 @@ class SisDashboardActivity : AppCompatActivity() {
         return null
     }
 }
+
+object DataStore {
+    val fields = HashMap<String, String>()
+    var registration: List<List<String>> = emptyList()
+    var semesterGrades: List<List<String>> = emptyList()
+    var attendance: List<List<String>> = emptyList()
+    var transcript: List<List<String>> = emptyList()
+    var account: List<List<String>> = emptyList()
+    var planDetails: Map<Int, List<List<String>>> = emptyMap()
+    var planNames: List<String> = emptyList()
+    val planStats = mutableListOf<List<String>>()
+    var moodleCourses: List<CourseSummary> = emptyList()
+    var moodleCourseMap: Map<String, String> = emptyMap()
+    var gpaHistory: List<Pair<String, Double>> = emptyList()
+
+    fn f(key: String) = fields[key]?.trim()?.takeIf { it != "-" && it.isNotEmpty() } ?: "" //
+    // ... wait, let's write correct syntax:
+    fun f(key: String) = fields[key]?.trim()?.takeIf { it != "-" && it.isNotEmpty() } ?: ""
+
+    fun reset() {
+        fields.clear()
+        planStats.clear()
+        registration = emptyList()
+        semesterGrades = emptyList()
+        attendance = emptyList()
+        transcript = emptyList()
+        account = emptyList()
+        planDetails = emptyMap()
+        planNames = emptyList()
+        moodleCourses = emptyList()
+        moodleCourseMap = emptyMap()
+        gpaHistory = emptyList()
+    }
+}
