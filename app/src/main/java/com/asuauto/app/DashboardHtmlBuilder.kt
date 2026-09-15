@@ -182,16 +182,16 @@ object DashboardHtmlBuilder {
         sb.append("<img id='pullLogoImg' src='data:image/jpeg;base64,$pullLogoBase64' style='position:absolute;top:8px;left:50%;transform:translateX(-50%) scale(0.7);opacity:0;width:64px;pointer-events:none'/>")
         sb.append("</div>")
         sb.append("<div id='scrollWrap'>")
-        if (isOffline) {
-            sb.append("<div style='background:#e74c3c;color:#fff;text-align:center;padding:6px;font-size:12px;font-weight:bold;position:sticky;top:43px;z-index:10'>")
-            sb.append("📶❌ وضع عدم الاتصال — آخر تحديث: $lastUpdate")
-            sb.append("</div>")
-        }
+        sb.append("<div id='offlineBanner' style='display:none;background:#e74c3c;color:#fff;text-align:center;padding:6px;font-size:12px;font-weight:bold;position:sticky;top:43px;z-index:10'>")
+        sb.append("<span id='offlineBannerText'></span>")
+        sb.append("</div>")
         sb.append("<div id='refreshSpinner' style='display:none;text-align:center;padding:10px;'><div class='spinner'></div></div>")
+        sb.append("<div id='pagesContainer'>")
         sb.append("<div id='home' class='page active'>").append(home()).append("</div>")
         sb.append("<div id='plan' class='page'>").append(plan()).append("</div>")
         sb.append("<div id='grades' class='page'>").append(grades()).append("</div>")
         sb.append("<div id='account' class='page'>").append(account()).append("</div>")
+        sb.append("</div>")
         sb.append("</div>")
         sb.append(SCRIPT())
         return sb.toString()
@@ -342,18 +342,37 @@ object DashboardHtmlBuilder {
             sb.append("<line x1='$padL' y1='${h - padB}' x2='${dynamicWidth - padR}' y2='${h - padB}' stroke='#444' stroke-width='2'/>")
 
             val pts = history.mapIndexed { i, pair -> xAt(i) to yAt(pair.second) }
-            
+
+            // Smooth Catmull-Rom-to-Bezier curve instead of straight segments,
+            // with a gradient stroke that blends green where the GPA rose and
+            // red where it dropped — a real color transition along the line,
+            // not a hard switch at each point.
+            val path = StringBuilder("M${pts[0].first},${pts[0].second} ")
             for (i in 0 until pts.size - 1) {
-                val p1 = pts[i]; val p2 = pts[i + 1]
-                val v1 = history[i].second; val v2 = history[i + 1].second
-                val lineColor = if (v2 >= v1) "#27ae60" else "#e74c3c"
-                sb.append("<line x1='${p1.first}' y1='${p1.second}' x2='${p2.first}' y2='${p2.second}' stroke='$lineColor' stroke-width='4' stroke-linecap='round'/>")
+                val p0 = pts.getOrElse(i - 1) { pts[i] }
+                val p1 = pts[i]
+                val p2 = pts[i + 1]
+                val p3 = pts.getOrElse(i + 2) { pts[i + 1] }
+                val c1x = p1.first + (p2.first - p0.first) / 6
+                val c1y = p1.second + (p2.second - p0.second) / 6
+                val c2x = p2.first - (p3.first - p1.first) / 6
+                val c2y = p2.second - (p3.second - p1.second) / 6
+                path.append("C$c1x,$c1y $c2x,$c2y ${p2.first},${p2.second} ")
             }
+
+            sb.append("<defs><linearGradient id='gpaGrad' x1='0' y1='0' x2='1' y2='0'>")
+            for (i in history.indices) {
+                val offset = if (n == 1) 0 else i * 100 / (n - 1)
+                val color = if (i == 0) "#3498db" else if (history[i].second >= history[i - 1].second) "#27ae60" else "#e74c3c"
+                sb.append("<stop offset='$offset%' stop-color='$color'/>")
+            }
+            sb.append("</linearGradient></defs>")
+            sb.append("<path d='$path' fill='none' stroke='url(#gpaGrad)' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/>")
 
             pts.forEachIndexed { i, p ->
                 val v1 = history[i].second
-                val prevV = if (i > 0) history[i-1].second else v1
-                val dotColor = if (v1 >= prevV) "#27ae60" else "#e74c3c"
+                val prevV = if (i > 0) history[i - 1].second else v1
+                val dotColor = if (i == 0) "#3498db" else if (v1 >= prevV) "#27ae60" else "#e74c3c"
                 sb.append("<circle cx='${p.first}' cy='${p.second}' r='6' fill='$dotColor' stroke='#fff' stroke-width='2'/>")
             }
 
@@ -575,8 +594,8 @@ object DashboardHtmlBuilder {
         .tabs{display:flex;position:sticky;top:0;background:#2c3e50;z-index:20}
         .tab{flex:1;text-align:center;padding:12px 2px;color:#fff;font-size:12px;cursor:pointer}
         .tab.active{background:#34495e;border-bottom:3px solid #3498db}
-        .page{display:none;padding:12px}
-        .page.active{display:block}
+        .page{width:100%;flex-shrink:0;padding:12px;box-sizing:border-box}
+        #pagesContainer{display:flex;transition:transform 0.3s ease-out}
         .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px}
         .honor-gold{background:linear-gradient(135deg,#fcf4d9 0%,#e8c96b 50%,#d4af37 100%) !important;border:1px solid #d4af37;color:#333 !important}
         .honor-gold .muted,.honor-gold .lbl{color:#5a4a15 !important}
@@ -648,8 +667,22 @@ object DashboardHtmlBuilder {
         val lFinGrade = t("علامة الامتحان النهائي", "Final Exam Grade"); val lTotal = t("المجموع", "Total")
         val lMidExam = t("امتحان المنتصف", "Midterm Exam"); val lFinExam = t("الامتحان النهائي", "Final Exam")
         val lCode = t("رمز المقرر", "Course Code")
+        val offlinePrefix = t("📶❌ وضع عدم الاتصال — آخر تحديث: ", "📶❌ Offline mode — last update: ")
+        val offlineNoUpdate = t("📶❌ وضع عدم الاتصال — لا توجد بيانات محدثة بعد", "📶❌ Offline mode — no data synced yet")
         return """
-        <script>var CALLBL="$calLbl",CALLBL_EXAMS="$calLblExams",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",ROOMLBL="${t("القاعة", "Room")}";</script>
+        <script>var CALLBL="$calLbl",CALLBL_EXAMS="$calLblExams",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",ROOMLBL="${t("القاعة", "Room")}";
+        function applyOfflineState(offline, lastUpdate){
+          var b=document.getElementById('offlineBanner');
+          var t=document.getElementById('offlineBannerText');
+          if(!b||!t) return;
+          if(offline){
+            t.textContent = lastUpdate ? "$offlinePrefix" + lastUpdate : "$offlineNoUpdate";
+            b.style.display='block';
+          } else {
+            b.style.display='none';
+          }
+        }
+        </script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
         <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
@@ -687,6 +720,13 @@ object DashboardHtmlBuilder {
         var pullLogoImg=document.getElementById('pullLogoImg');
         var PULL_MAX=160;
 
+        var PAGE_ORDER=['home','plan','grades','account'];
+        var currentPageIndex=0;
+        var pagesContainer=document.getElementById('pagesContainer');
+        var startX=0;
+        var currentX=0;
+        var gesture=null; // null | 'vertical' | 'horizontal'
+
         function updatePullVisual(pullDist){
           var h=Math.min(pullDist,PULL_MAX);
           var bow=h*0.55;
@@ -700,28 +740,64 @@ object DashboardHtmlBuilder {
           pullLogoImg.style.transform='translateX(-50%) scale('+(0.6+ratio*0.4)+')';
         }
 
+        function setActivePage(index, animate){
+          currentPageIndex=index;
+          pagesContainer.style.transition = animate ? 'transform 0.3s ease-out' : 'none';
+          pagesContainer.style.transform = 'translateX(' + (index * 100) + '%)';
+          document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
+          document.getElementById(PAGE_ORDER[index]).classList.add('active');
+          document.querySelectorAll('.tab').forEach(function(t,i){
+            t.classList.toggle('active', i===index);
+          });
+        }
+
         document.addEventListener('touchstart',function(e){
-          if(window.scrollY<=0) {
-            startY=e.touches[0].clientY;
-            scrollWrap.style.transition='none';
+          if(e.target.closest('.ov') || e.target.closest('.activeBanner')){
+            gesture='ignore';
+            return;
           }
+          startX=e.touches[0].clientX;
+          startY=e.touches[0].clientY;
+          gesture=null;
+          scrollWrap.style.transition='none';
+          pagesContainer.style.transition='none';
         },{passive:true});
 
         document.addEventListener('touchmove',function(e){
-          if(startY>0 && window.scrollY<=0) {
-            var y=e.touches[0].clientY;
-            if(y > startY) {
+          if(gesture==='ignore') return;
+          var x=e.touches[0].clientX;
+          var y=e.touches[0].clientY;
+          var dx=x-startX;
+          var dy=y-startY;
+
+          if(gesture===null && (Math.abs(dx)>8 || Math.abs(dy)>8)){
+            gesture = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
+          }
+
+          if(gesture==='vertical' && window.scrollY<=0){
+            if(dy > 0){
               isPulling=true;
-              currentY=y-startY;
+              currentY=dy;
               var pullDist=currentY*0.4;
               scrollWrap.style.transform='translateY('+pullDist+'px)';
               updatePullVisual(pullDist);
             }
+          } else if(gesture==='horizontal'){
+            // Since the html has dir="rtl", array-order-next is visually to
+            // the left already, so plain index math (no RTL flip) is correct.
+            var atFirst = currentPageIndex===0 && dx>0;
+            var atLast = currentPageIndex===PAGE_ORDER.length-1 && dx<0;
+            var damp = (atFirst || atLast) ? 0.3 : 1;
+            currentX = dx * damp;
+            var basePercent = -currentPageIndex*100;
+            var dragPercent = (currentX / window.innerWidth) * 100;
+            pagesContainer.style.transform = 'translateX(' + (basePercent + dragPercent) + '%)';
           }
         },{passive:true});
 
         document.addEventListener('touchend',function(e){
-          if(isPulling) {
+          if(gesture==='ignore'){ gesture=null; return; }
+          if(gesture==='vertical' && isPulling) {
             scrollWrap.style.transition='transform 0.3s ease-out';
             scrollWrap.style.transform='translateY(0px)';
             pullIndicator.style.transition='height 0.3s ease-out';
@@ -730,17 +806,23 @@ object DashboardHtmlBuilder {
               document.getElementById('refreshSpinner').style.display='block';
               if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
             }
+          } else if(gesture==='horizontal'){
+            var threshold=window.innerWidth*0.18;
+            var nextIndex=currentPageIndex;
+            if(currentX < -threshold && currentPageIndex < PAGE_ORDER.length-1) nextIndex++;
+            else if(currentX > threshold && currentPageIndex > 0) nextIndex--;
+            setActivePage(nextIndex, true);
           }
           startY=0;
+          startX=0;
           currentY=0;
+          currentX=0;
           isPulling=false;
+          gesture=null;
         });
 
         function sp(el,id){
-          document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
-          document.getElementById(id).classList.add('active');
-          document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
-          el.classList.add('active');
+          setActivePage(PAGE_ORDER.indexOf(id), true);
         }
         function v(x){return (x&&x!=='-'&&x!=='')?x:'-';}
         function openModal(k){

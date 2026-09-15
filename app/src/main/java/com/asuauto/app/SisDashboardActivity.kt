@@ -33,7 +33,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 16
+    private val CACHE_VERSION = 17
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -179,6 +179,18 @@ class SisDashboardActivity : AppCompatActivity() {
         return android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
     }
 
+    private var loadingLogoCache: String? = null
+
+    private fun loadingLogoBase64(): String {
+        loadingLogoCache?.let { return it }
+        val bmp = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.asu_logo_loading)
+        val baos = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
+        val encoded = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+        loadingLogoCache = encoded
+        return encoded
+    }
+
     private fun showAnimatedLoader() {
         progressLayout.visibility = View.GONE
         resultWebView.visibility = View.VISIBLE
@@ -186,23 +198,20 @@ class SisDashboardActivity : AppCompatActivity() {
             <html dir="rtl"><head><meta name="viewport" content="width=device-width,initial-scale=1">
             <style>
             body { background:#f2f3f5; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0; }
-            .loader-container { position:relative; width:160px; height:160px; }
-            .loader-bg-logo { width:100%; height:100%; object-fit:contain; opacity:0.15; }
+            .loader-container { position:relative; width:200px; height:200px; }
+            .loader-bg-logo { width:100%; height:100%; object-fit:contain; opacity:0.18; }
             .loader-water-fill { position:absolute; bottom:0; left:0; width:100%; height:0%; overflow:hidden; transition:height 0.4s ease; }
-            .loader-water-fill img { position:absolute; bottom:0; left:0; width:160px; height:160px; object-fit:contain; opacity:0.9; }
-            .percent { margin-top:20px; font-size:18px; font-weight:bold; color:#555; font-family:sans-serif; }
+            .loader-water-fill img { position:absolute; bottom:0; left:0; width:200px; height:200px; object-fit:contain; }
             </style></head><body>
             <div class="loader-container">
-                <img src="data:image/png;base64,${logoBase64()}" class="loader-bg-logo" />
+                <img src="data:image/png;base64,${loadingLogoBase64()}" class="loader-bg-logo" />
                 <div id="waterFillLayer" class="loader-water-fill">
-                    <img src="data:image/png;base64,${logoBase64()}" />
+                    <img src="data:image/png;base64,${loadingLogoBase64()}" />
                 </div>
             </div>
-            <div class="percent" id="loaderText">0%</div>
             <script>
             function setProgress(p){
                 document.getElementById('waterFillLayer').style.height = p + '%';
-                document.getElementById('loaderText').textContent = p + '%';
             }
             </script>
             </body></html>
@@ -258,7 +267,29 @@ class SisDashboardActivity : AppCompatActivity() {
         resultWebView.addJavascriptInterface(bridge, "AndroidBridge")
 
         val prefs = getSharedPreferences("asu_prefs", MODE_PRIVATE)
-        
+
+        // The offline banner used to be baked into the dashboard HTML at the
+        // moment it was generated — but that only ever happens right after a
+        // successful scrape, which requires being online, so the banner was
+        // essentially always absent from the saved HTML. Viewing that same
+        // cached HTML later while actually offline never showed it, because
+        // it's a static string from the past, not something re-evaluated on
+        // each display. Now the banner is always present in the markup
+        // (hidden by default) and this WebViewClient sets its real state
+        // every time a page finishes loading — cached or freshly built —
+        // using the network status at that exact moment.
+        resultWebView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                val offlineNow = !isNetworkAvailable()
+                val lastUpdateNow = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("last_update_time", "") ?: ""
+                view?.evaluateJavascript(
+                    "if(typeof applyOfflineState!=='undefined') applyOfflineState($offlineNow, '${lastUpdateNow.replace("'", "")}');",
+                    null
+                )
+            }
+        }
+
         DashboardHtmlBuilder.isOffline = !isNetworkAvailable()
         DashboardHtmlBuilder.lastUpdate = prefs.getString("last_update_time", "") ?: ""
         DashboardHtmlBuilder.pullLogoBase64 = pullLogoBase64Cached()
