@@ -155,24 +155,16 @@ class MainActivity : AppCompatActivity() {
                 super.onPageFinished(view, url)
                 if (view == null) return
                 
-                // استخراج الصورة الشخصية الحقيقية بدقة متناهية وتجنب شعار الجامعة
+                // التقاط الصورة الشخصية بدقة حصراً وتجنب شعار الجامعة
                 view.evaluateJavascript("""
                     (function() {
+                        var avatarImg = document.querySelector('img[src*="pjpeg"], img[src*="get_image"], img[id*="photo"], img[class*="avatar"], .t-Avatar img, img[alt*="Student"]');
+                        if (avatarImg && avatarImg.src && !avatarImg.src.includes('logo')) { return avatarImg.src; }
                         var imgs = document.getElementsByTagName('img');
                         for(var i=0; i<imgs.length; i++) {
                             var src = imgs[i].src || '';
-                            var alt = (imgs[i].alt || '').toLowerCase();
-                            var className = (imgs[i].className || '').toLowerCase();
-                            if(src.length > 25 && !src.toLowerCase().includes('logo') && !src.toLowerCase().includes('header') && !src.toLowerCase().includes('asu_logo')) {
-                                if(className.includes('profile') || alt.includes('profile') || alt.includes('photo') || imgs[i].width > 60 || imgs[i].height > 60) {
-                                    return src;
-                                }
-                            }
-                        }
-                        for(var i=0; i<imgs.length; i++) {
-                            var src = imgs[i].src || '';
-                            if(src.length > 30 && !src.toLowerCase().includes('logo')) {
-                                return src;
+                            if(src.length > 30 && !src.toLowerCase().includes('logo') && !src.toLowerCase().includes('header') && !src.toLowerCase().includes('google')) {
+                                if(imgs[i].width > 40 && imgs[i].height > 40) { return src; }
                             }
                         }
                         return "";
