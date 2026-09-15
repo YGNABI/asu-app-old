@@ -200,7 +200,7 @@ object DashboardHtmlBuilder {
         sb.append("<div class='avatar' style='background:$avatarBg;color:$avatarFg'>${esc(initials)}</div>")
         sb.append("<div><div class='big'>${esc(name)}</div><div class='muted'>${esc(d.f("studentCollege"))}</div></div></div>")
         if (avatarUrl.isNotBlank()) {
-            sb.append("<img src='${esc(avatarUrl)}' style='width:48px;height:48px;border-radius:50%;object-fit:cover;border:1.5px solid #d4af37'/>")
+            sb.append("<img src='${esc(avatarUrl)}' style='width:2cm;height:2.5cm;border-radius:12px;object-fit:cover;border:1.5px solid #d4af37'/>")
         }
         sb.append("</div>")
         sb.append("<div class='grid'>")
@@ -449,7 +449,7 @@ object DashboardHtmlBuilder {
         }
 
         sb.append("<div class='legend2'>")
-        listOf("#1D9E75" to "٩٠-١٠٠", "#0F6E56" to "٨٠-٨٩", "#378ADD" to "٧٠-٧٩", "#BA7517" to "٦٠-٦٩", "#E24B4A" to "٥٠-٥٩", "#1a1a1a" to t("أقل من ٥٠", "Below 50"))
+        listOf("#1D9E75" to "٩٠-١00", "#0F6E56" to "٨٠-٨٩", "#378ADD" to "٧٠-٧٩", "#BA7517" to "٦٠-٦٩", "#E24B4A" to "٥٠-٥٩", "#1a1a1a" to t("أقل من ٥٠", "Below 50"))
             .forEach { (col, lbl) -> sb.append("<span><i style='background:$col'></i>$lbl</span>") }
         sb.append("</div>")
         sb.append("<div class='filters'><div class='chip' onclick=\"fg(this,'all')\">${t("الكل", "All")}</div><div class='chip active' onclick=\"fg(this,'sem')\">${t("حسب الفصل", "By Semester")}</div></div>")
