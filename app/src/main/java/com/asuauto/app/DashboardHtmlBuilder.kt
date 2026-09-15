@@ -191,12 +191,18 @@ object DashboardHtmlBuilder {
         val (avatarBg, avatarFg) = warnColor(warning)
         val cardClass = if (warning.isBlank()) honorRollClass() else "card"
         val initials = name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }
+        val avatarUrl = d.f("studentAvatar")
 
         val sb = StringBuilder()
         sb.append("<div class='$cardClass'>")
+        sb.append("<div style='display:flex;align-items:center;justify-content:space-between'>")
         sb.append("<div style='display:flex;align-items:center;gap:12px'>")
         sb.append("<div class='avatar' style='background:$avatarBg;color:$avatarFg'>${esc(initials)}</div>")
         sb.append("<div><div class='big'>${esc(name)}</div><div class='muted'>${esc(d.f("studentCollege"))}</div></div></div>")
+        if (avatarUrl.isNotBlank()) {
+            sb.append("<img src='${esc(avatarUrl)}' style='width:46px;height:46px;border-radius:50%;object-fit:cover;border:1px solid #ccc'/>")
+        }
+        sb.append("</div>")
         sb.append("<div class='grid'>")
         sb.append(kvBox(t("المعدل التراكمي", "GPA"), d.f("studentGpa"), "toggleGpaChart()"))
         sb.append(kvBox(t("متوقع تخرجه", "Expected to graduate"), d.f("gradExpected")))
@@ -221,7 +227,7 @@ object DashboardHtmlBuilder {
                 val gpa = Regex("GPA\\s+([\\d.]+)").find(text)?.groupValues?.get(1)?.toDoubleOrNull()
                 if (gpa != null) {
                     var termName = text.substringBefore("Average").substringBefore("المعدل").trim()
-                    if (termName.length > 15) termName = termName.take(15) + ".."
+                    if (termName.length > 12) termName = termName.take(12) + ".."
                     transcriptHistory.add(termName to gpa)
                 }
             }
@@ -292,52 +298,43 @@ object DashboardHtmlBuilder {
         if (history.size < 2) {
             sb.append("<div class='empty' style='padding:20px 4px'>${t("لا توجد فصول سابقة كافية لرسم منحنى التطور", "Not enough past semesters to draw a trend curve")}</div>")
         } else {
-            val w = 300.0; val h = 150.0; val padL = 30.0; val padR = 8.0; val padT = 10.0; val padB = 20.0
-            val values = history.map { it.second }
-            var minV = values.min() - 1.0
-            var maxV = values.max() + 1.0
-            if (maxV - minV < 2.0) { minV -= 1.0; maxV += 1.0 }
-            minV = minV.coerceAtLeast(0.0)
-            maxV = maxV.coerceAtMost(100.0)
+            val w = 320.0; val h = 180.0; val padL = 36.0; val padR = 12.0; val padT = 15.0; val padB = 30.0
+            val values = history.map { second -> second }
+            var minV = (values.min() - 2.0).coerceAtLeast(50.0)
+            var maxV = (values.max() + 2.0).coerceAtMost(100.0)
             val n = history.size
             val span = (maxV - minV).let { if (it == 0.0) 1.0 else it }
-            fun xAt(i: Int) = padL + (w - padL - padR) * i / (n - 1)
+
+            fun xAt(i: Int) = padL + (w - padL - padR) * i / (n - 1).coerceAtLeast(1)
             fun yAt(v: Double) = padT + (h - padT - padB) * (1 - (v - minV) / span)
+
+            sb.append("<svg viewBox='0 0 $w $h' width='100%' height='180' preserveAspectRatio='xMidYMid meet'>")
+            
+            // رسم المحاور (X و Y) والخطوط الإرشادية للنسب
+            val steps = 4
+            for (s in 0..steps) {
+                val v = minV + (span * s / steps)
+                val y = yAt(v)
+                sb.append("<line x1='$padL' y1='$y' x2='${w - padR}' y2='$y' stroke='#e0e0e0' stroke-width='0.8' stroke-dasharray='2,2'/>")
+                sb.append("<text x='${padL - 4}' y='${y + 3}' font-size='8' fill='#888' text-anchor='end'>${v.toInt()}</text>")
+            }
+            sb.append("<line x1='$padL' y1='$padT' x2='$padL' y2='${h - padB}' stroke='#888' stroke-width='1.2'/>")
+            sb.append("<line x1='$padL' y1='${h - padB}' x2='${w - padR}' y2='${h - padB}' stroke='#888' stroke-width='1.2'/>")
 
             val pts = history.mapIndexed { i, pair -> xAt(i) to yAt(pair.second) }
             val path = StringBuilder("M${pts[0].first},${pts[0].second} ")
             for (i in 0 until pts.size - 1) {
-                val p0 = pts.getOrElse(i - 1) { pts[i] }
-                val p1 = pts[i]
-                val p2 = pts[i + 1]
-                val p3 = pts.getOrElse(i + 2) { pts[i + 1] }
-                val c1x = p1.first + (p2.first - p0.first) / 6
-                val c1y = p1.second + (p2.second - p0.second) / 6
-                val c2x = p2.first - (p3.first - p1.first) / 6
-                val c2y = p2.second - (p3.second - p1.second) / 6
-                path.append("C$c1x,$c1y $c2x,$c2y ${p2.first},${p2.second} ")
+                val p1 = pts[i]; val p2 = pts[i + 1]
+                path.append("L${p2.first},${p2.second} ")
             }
 
-            sb.append("<svg viewBox='0 0 $w $h' width='100%' height='150' preserveAspectRatio='xMidYMid meet'>")
-            for (gi in 0..2) {
-                val gy = padT + (h - padT - padB) * gi / 2
-                sb.append("<line x1='$padL' y1='$gy' x2='${w - padR}' y2='$gy' stroke='#eee' stroke-width='1'/>")
-            }
-            sb.append("<defs><linearGradient id='gpaGrad' x1='0' y1='0' x2='1' y2='0'>")
-            for (i in history.indices) {
-                val offset = if (n == 1) 0 else i * 100 / (n - 1)
-                val color = if (i == 0) "#378ADD" else if (history[i].second >= history[i - 1].second) "#1D9E75" else "#E24B4A"
-                sb.append("<stop offset='$offset%' stop-color='$color'/>")
-            }
-            sb.append("</linearGradient></defs>")
-            sb.append("<path d='$path' fill='none' stroke='url(#gpaGrad)' stroke-width='3' stroke-linecap='round'/>")
+            sb.append("<path d='$path' fill='none' stroke='#3498db' stroke-width='2.5' stroke-linecap='round'/>")
             pts.forEachIndexed { i, p ->
-                val color = if (i == 0) "#378ADD" else if (history[i].second >= history[i - 1].second) "#1D9E75" else "#E24B4A"
-                sb.append("<circle cx='${p.first}' cy='${p.second}' r='3' fill='$color'/>")
+                sb.append("<circle cx='${p.first}' cy='${p.second}' r='3.5' fill='#2980b9'/>")
             }
-            val labelIdxs = if (n <= 4) history.indices.toList() else listOf(0, n / 2, n - 1)
-            for (i in labelIdxs) {
-                sb.append("<text x='${pts[i].first}' y='${h - 4}' font-size='8' fill='#999' text-anchor='middle'>${esc(history[i].first)}</text>")
+            history.forEachIndexed { i, pair ->
+                val px = pts[i].first
+                sb.append("<text x='$px' y='${h - padB + 12}' font-size='8' fill='#666' text-anchor='middle' transform='rotate(-20,$px,${h - padB + 12}'>${esc(pair.first)}</text>")
             }
             sb.append("</svg>")
         }
@@ -382,7 +379,7 @@ object DashboardHtmlBuilder {
             if (rows.size < 2) continue
             val h = rows[0]
             val si = colIdx(h, "درسها"); val pi = colIdx(h, "اجتازها")
-            val ni = colIdx(h, "اسم المقرر"); val ci = colIdx(h, "رمز"); val hi = colIdx(h, "عدد الساعات")
+            val ni = colIdx(h, "اسم المقرر"); val ci = colIdx(h, "رمز")
             val stat = DataStore.planStats.getOrNull(idx)
             val catName = stat?.getOrNull(0) ?: DataStore.planNames.getOrNull(idx) ?: "${t("فئة", "Category")} ${idx + 1}"
 
@@ -449,7 +446,7 @@ object DashboardHtmlBuilder {
         listOf("#1D9E75" to "٩٠-١٠٠", "#0F6E56" to "٨٠-٨٩", "#378ADD" to "٧٠-٧٩", "#BA7517" to "٦٠-٦٩", "#E24B4A" to "٥٠-٥٩", "#1a1a1a" to t("أقل من ٥٠", "Below 50"))
             .forEach { (col, lbl) -> sb.append("<span><i style='background:$col'></i>$lbl</span>") }
         sb.append("</div>")
-        sb.append("<div class='filters'><div class='chip active' onclick=\"fg(this,'all')\">${t("الكل", "All")}</div><div class='chip' onclick=\"fg(this,'sem')\">${t("حسب الفصل", "By Semester")}</div></div>")
+        sb.append("<div class='filters'><div class='chip' onclick=\"fg(this,'all')\">${t("الكل", "All")}</div><div class='chip active' onclick=\"fg(this,'sem')\">${t("حسب الفصل", "By Semester")}</div></div>")
 
         val gMap = StringBuilder("<script>var G={")
         var gi = 0
@@ -471,7 +468,7 @@ object DashboardHtmlBuilder {
             }
             val key = "g${gi++}"
             val circleTxt = if (num != null) totalG else if (case.isNotBlank() && case != "-") case.take(4) else "-"
-            sb.append("<div class='row' style='background:#fff;border-radius:8px;margin-bottom:8px;border-right:5px solid $color' onclick=\"openGrade('$key')\">")
+            sb.append("<div class='row' style='border-radius:8px;margin-bottom:8px;border-right:5px solid $color' onclick=\"openGrade('$key')\">")
             sb.append("<div><div class='rowTitle'>${esc(name)} <span class='codeTag'>${esc(code)}</span></div>")
             sb.append("<div class='rowSub'>${t("منتصف", "Mid")}: ${esc(mid)} · ${t("أعمال", "Work")}: ${esc(work)} · ${t("نهائي", "Final")}: ${esc(fin)}</div></div>")
             sb.append("<div class='circle' style='background:$color;color:#fff;flex-shrink:0'>${esc(circleTxt)}</div>")
@@ -538,52 +535,73 @@ object DashboardHtmlBuilder {
         <html dir="$dir" lang="$langCode"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
-        body{font-family:sans-serif;background:#f2f3f5;margin:0}
-        .tabs{display:flex;position:sticky;top:0;background:#2c3e50;z-index:20}
+        :root {
+            --bg-color: #f2f3f5;
+            --card-bg: #fff;
+            --text-main: #1a1a1a;
+            --text-muted: #888;
+            --border-color: #f0f0f0;
+            --tab-bg: #2c3e50;
+            --tab-active: #34495e;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #121212;
+                --card-bg: #1e1e1e;
+                --text-main: #e0e0e0;
+                --text-muted: #aaa;
+                --border-color: #2c2c2c;
+                --tab-bg: #1f2c34;
+                --tab-active: #2c3e50;
+            }
+        }
+        body{font-family:sans-serif;background:var(--bg-color);color:var(--text-main);margin:0}
+        .tabs{display:flex;position:sticky;top:0;background:var(--tab-bg);z-index:20}
         .tab{flex:1;text-align:center;padding:12px 2px;color:#fff;font-size:12px;cursor:pointer}
-        .tab.active{background:#34495e;border-bottom:3px solid #3498db}
+        .tab.active{background:var(--tab-active);border-bottom:3px solid #3498db}
         .page{display:none;padding:12px}
         .page.active{display:block}
-        .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px}
-        .honor-gold{background:linear-gradient(135deg,#fcf4d9 0%,#e8c96b 50%,#d4af37 100%);border:1px solid #d4af37}
+        .card{background:var(--card-bg);border-radius:12px;padding:14px;margin-bottom:10px}
+        .honor-gold{background:linear-gradient(135deg,#fcf4d9 0%,#e8c96b 50%,#d4af37 100%) !important;border:1px solid #d4af37;color:#333 !important}
         .honor-gold .muted,.honor-gold .lbl{color:#5a4a15 !important}
-        .honor-silver{background:linear-gradient(135deg,#f4f5f6 0%,#d5d7d9 50%,#aeb1b3 100%);border:1px solid #aeb1b3}
+        .honor-silver{background:linear-gradient(135deg,#f4f5f6 0%,#d5d7d9 50%,#aeb1b3 100%) !important;border:1px solid #aeb1b3;color:#333 !important}
         .honor-silver .muted,.honor-silver .lbl{color:#4a4d4f !important}
         .avatar{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold}
         .big{font-size:15px;font-weight:bold}
-        .muted{font-size:12px;color:#888}
+        .muted{font-size:12px;color:var(--text-muted)}
         .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:10px}
-        .lbl{font-size:10px;color:#999}
+        .lbl{font-size:10px;color:var(--text-muted)}
         .val{font-size:14px}
-        .sep{border-top:1px solid #eee;margin-top:10px;padding-top:8px}
+        .sep{border-top:1px solid var(--border-color);margin-top:10px;padding-top:8px}
         .kv{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
-        .list{background:#fff;border-radius:12px;overflow:hidden}
-        .row,.arow{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #f0f0f0;cursor:pointer}
+        .list{background:var(--card-bg);border-radius:12px;overflow:hidden}
+        .row,.arow{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border-color);cursor:pointer;background:var(--card-bg)}
         .row:last-child,.arow:last-child{border-bottom:none}
         .rowTitle{font-size:14px;font-weight:bold}
-        .codeTag{font-size:10px;color:#aaa;font-weight:normal}
-        .rowSub{font-size:11px;color:#888;margin-top:3px}
+        .codeTag{font-size:10px;color:var(--text-muted);font-weight:normal}
+        .rowSub{font-size:11px;color:var(--text-muted);margin-top:3px}
         .circle{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold}
-        .pcard{background:#fff;border-radius:8px;padding:11px 12px;margin-bottom:8px}
-        .cat{background:#e3e8ee;border-radius:8px;padding:9px 12px;margin:14px 0 8px}
+        .pcard{background:var(--card-bg);border-radius:8px;padding:11px 12px;margin-bottom:8px}
+        .cat{background:var(--border-color);border-radius:8px;padding:9px 12px;margin:14px 0 8px}
         .catName{font-size:13px;font-weight:bold}
-        .catStats{font-size:11px;color:#666;margin-top:3px}
-        .term{background:#2c3e50;color:#fff;padding:8px 10px;border-radius:6px;margin:14px 0 8px;font-size:12px}
-        .legend,.legend2{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:#777;margin-bottom:10px}
+        .catStats{font-size:11px;color:var(--text-muted);margin-top:3px}
+        .term{background:var(--tab-bg);color:#fff;padding:8px 10px;border-radius:6px;margin:14px 0 8px;font-size:12px}
+        .legend,.legend2{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--text-muted);margin-bottom:10px}
         .legend i,.legend2 i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:4px}
         .filters{display:flex;gap:6px;margin-bottom:10px}
-        .chip{background:#e6e6e6;border-radius:14px;padding:6px 14px;font-size:12px;cursor:pointer}
+        .chip{background:var(--border-color);border-radius:14px;padding:6px 14px;font-size:12px;cursor:pointer}
         .chip.active{background:#3498db;color:#fff}
-        .empty{text-align:center;color:#aaa;padding:40px 10px}
+        .empty{text-align:center;color:var(--text-muted);padding:40px 10px}
         .gold{background:#caa23e;color:#fff;font-size:11px;padding:3px 10px;border-radius:12px}
         .pill{color:#fff;font-size:10px;padding:2px 9px;border-radius:10px}
+        .emailBtn{display:inline-block;margin-top:6px;background:#2980b9;color:#fff;font-size:11px;padding:6px 12px;border-radius:8px;cursor:pointer;text-decoration:none}
         .calBtn{display:inline-block;margin-top:6px;background:#eef4fb;color:#2c6cb0;font-size:11px;padding:5px 10px;border-radius:8px;cursor:pointer}
         .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
         .ov.show{display:flex}
-        .modal{background:#fff;border-radius:14px;padding:16px;width:86%;max-width:340px}
+        .modal{background:var(--card-bg);color:var(--text-main);border-radius:14px;padding:16px;width:86%;max-width:340px}
         .row.rowActive{background:#EAF3DE;border-right:4px solid #3B6D11}
         .row.rowActive .rowTitle{color:#2c5b0e}
-        .activeBanner{position:fixed;left:12px;right:12px;bottom:14px;background:#2c3e50;color:#fff;border-radius:14px;padding:12px 16px;display:none;align-items:center;justify-content:space-between;z-index:90;box-shadow:0 4px 14px rgba(0,0,0,.25);touch-action:none}
+        .activeBanner{position:fixed;left:12px;right:12px;bottom:14px;background:var(--tab-bg);color:#fff;border-radius:14px;padding:12px 16px;display:none;align-items:center;justify-content:space-between;z-index:90;box-shadow:0 4px 14px rgba(0,0,0,.25);touch-action:none}
         .activeBanner.show{display:flex}
         .activeBannerHandle{width:34px;height:4px;background:rgba(255,255,255,.4);border-radius:3px;position:absolute;top:6px;left:50%;transform:translateX(-50%)}
         .activeBannerText{width:100%;padding-top:6px}
@@ -602,24 +620,23 @@ object DashboardHtmlBuilder {
 
     private fun SCRIPT(): String {
         val calLbl = t("أضف للتقويم", "Add to Calendar")
-        val calLblMid = t("أضف امتحان المنتصف للتقويم", "Add Midterm to Calendar")
-        val calLblFin = t("أضف الامتحان النهائي للتقويم", "Add Final to Calendar")
         val calLblExams = t("أضف مواعيد الامتحانات للتقويم", "Add Exams to Calendar")
         val materialsLbl = t("عرض المادة التعليمية", "View Course Materials")
         val assessmentsLbl = t("عرض الواجبات والبحوث", "View Assignments & Research")
+        val emailLbl = t("إرسال إيميل للمدرس", "Email Instructor")
         val lSection = t("الشعبة", "Section"); val lTeacher = t("المدرس", "Instructor")
         val lMidGrade = t("علامة المنتصف", "Midterm Grade"); val lWork = t("أعمال أخرى", "Other Work")
         val lFinGrade = t("علامة الامتحان النهائي", "Final Exam Grade"); val lTotal = t("المجموع", "Total")
         val lMidExam = t("امتحان المنتصف", "Midterm Exam"); val lFinExam = t("الامتحان النهائي", "Final Exam")
         val lCode = t("رمز المقرر", "Course Code")
         return """
-        <script>var CALLBL="$calLbl",CALLBL_MID="$calLblMid",CALLBL_FIN="$calLblFin",CALLBL_EXAMS="$calLblExams",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",ROOMLBL="${t("القاعة", "Room")}";</script>
+        <script>var CALLBL="$calLbl",CALLBL_EXAMS="$calLblExams",MATERIALSLBL="$materialsLbl",ASSESSMENTSLBL="$assessmentsLbl",EMAILLBL="$emailLbl",ROOMLBL="${t("القاعة", "Room")}";</script>
         <div class='ov' id='ov' onclick="if(event.target===this)cm()">
         <div class='modal'>
         <span onclick="cm()" style="float:left;font-size:20px;cursor:pointer">&times;</span>
         <div id='mn' style='font-size:15px;font-weight:bold;margin-bottom:10px'></div>
         <div class='kv'><span>$lSection</span><span id='ms'></span></div>
-        <div class='kv'><span>$lTeacher</span><span id='mi'></span></div>
+        <div class='kv' style='align-items:center'><span>$lTeacher</span><div><span id='mi'></span> <span id='mEmailBtn'></span></div></div>
         <div class='kv'><span>$lMidGrade</span><span id='mmg'></span></div>
         <div class='kv'><span>$lWork</span><span id='mwg'></span></div>
         <div class='kv'><span>$lFinGrade</span><span id='mfg'></span></div>
@@ -653,6 +670,8 @@ object DashboardHtmlBuilder {
           document.getElementById('mn').textContent=c.n;
           document.getElementById('ms').textContent=v(c.s);
           document.getElementById('mi').textContent=v(c.i);
+          var emailHtml = c.i && c.i !== '-' ? "<a class='emailBtn' href='mailto:?subject=Inquiry regarding " + encodeURIComponent(c.n) + "'>&#9993; " + EMAILLBL + "</a>" : '';
+          document.getElementById('mEmailBtn').innerHTML = emailHtml;
           document.getElementById('mmg').textContent=v(c.mg);
           document.getElementById('mwg').textContent=v(c.wg);
           document.getElementById('mfg').textContent=v(c.fg);
@@ -688,20 +707,11 @@ object DashboardHtmlBuilder {
           document.querySelectorAll('.p-reg').forEach(function(x){x.style.display=(m==='reg')?'block':'none'});
           document.querySelectorAll('.p-all').forEach(function(x){x.style.display=(m==='all')?'block':'none'});
         }
-        function doLogout(){
-          if(typeof AndroidBridge!=='undefined') AndroidBridge.logout();
-        }
         function addAllExamsToCal(name, md, mtr, mr, fd, ftr, fr){
           if(typeof AndroidBridge!=='undefined') {
             if(md) AndroidBridge.addCalendarEvent(name + ' - Midterm', md, mtr, mr||'');
             if(fd) AndroidBridge.addCalendarEvent(name + ' - Final', fd, ftr, fr||'');
           }
-        }
-        function addExamToCal(name,date,time,room){
-          if(typeof AndroidBridge!=='undefined') AndroidBridge.addCalendarEvent(name,date,time,room||'');
-        }
-        function addInstallmentToCal(name,date){
-          if(typeof AndroidBridge!=='undefined') AndroidBridge.addCalendarEvent(name,date,'','');
         }
         function openCourseMaterials(moodleId,courseName){
           if(typeof AndroidBridge!=='undefined') AndroidBridge.openCourseMaterials(moodleId,courseName);
@@ -712,8 +722,16 @@ object DashboardHtmlBuilder {
         function fg(el,m){
           el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
           el.classList.add('active');
-          document.querySelectorAll('#grades .term').forEach(function(t){t.style.display=(m==='sem')?'block':'none'});
+          var isSem = (m==='sem');
+          document.querySelectorAll('#grades .term').forEach(function(t){t.style.display=isSem?'block':'none'});
         }
+        (function(){
+          var chips=document.querySelectorAll('#grades .chip');
+          if(chips.length >= 2){
+            chips[0].classList.remove('active');
+            chips[1].classList.add('active');
+          }
+        })();
         function fa(el,m){
           el.parentNode.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active')});
           el.classList.add('active');
