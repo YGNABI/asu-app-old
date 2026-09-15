@@ -183,20 +183,27 @@ class SisDashboardActivity : AppCompatActivity() {
         progressLayout.visibility = View.GONE
         resultWebView.visibility = View.VISIBLE
         val loaderHtml = """
-            <html dir="rtl"><body style="display:flex;align-items:center;justify-content:center;background:#f2f3f5;height:100vh;margin:0;">
-            <div style="text-align:center;">
-                <div style="position:relative;width:140px;height:140px;border-radius:50%;background:#e9eaec;margin:0 auto;overflow:hidden;box-shadow:inset 0 2px 10px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;">
-                    <div id="ring" style="position:absolute;inset:0;border-radius:50%;background:conic-gradient(#1D9E75 0deg,#1D9E75 0deg,transparent 0deg);transition:background 0.4s ease-out;"></div>
-                    <div style="position:absolute;inset:6px;border-radius:50%;background:#f2f3f5;"></div>
-                    <img id="logo" src="data:image/png;base64,${logoBase64()}" style="position:relative;width:65%;height:65%;object-fit:contain;opacity:0.12;transition:opacity 0.4s ease-out;"/>
+            <html dir="rtl"><head><meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>
+            body { background:#f2f3f5; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0; }
+            .loader-container { position:relative; width:160px; height:160px; }
+            .loader-bg-logo { width:100%; height:100%; object-fit:contain; opacity:0.15; }
+            .loader-water-fill { position:absolute; bottom:0; left:0; width:100%; height:0%; overflow:hidden; transition:height 0.4s ease; }
+            .loader-water-fill img { position:absolute; bottom:0; left:0; width:160px; height:160px; object-fit:contain; opacity:0.9; }
+            .percent { margin-top:20px; font-size:18px; font-weight:bold; color:#555; font-family:sans-serif; }
+            </style></head><body>
+            <div class="loader-container">
+                <img src="data:image/png;base64,${logoBase64()}" class="loader-bg-logo" />
+                <div id="waterFillLayer" class="loader-water-fill">
+                    <img src="data:image/png;base64,${logoBase64()}" />
                 </div>
             </div>
+            <div class="percent" id="loaderText">0%</div>
             <script>
-                function setProgress(p){
-                    document.getElementById('logo').style.opacity = 0.12 + 0.88 * (p/100);
-                    var deg = (p/100) * 360;
-                    document.getElementById('ring').style.background = 'conic-gradient(#1D9E75 ' + deg + 'deg, transparent ' + deg + 'deg)';
-                }
+            function setProgress(p){
+                document.getElementById('waterFillLayer').style.height = p + '%';
+                document.getElementById('loaderText').textContent = p + '%';
+            }
             </script>
             </body></html>
         """.trimIndent()
@@ -262,7 +269,7 @@ class SisDashboardActivity : AppCompatActivity() {
         if (DashboardHtmlBuilder.isOffline && cached != null) {
             progressLayout.visibility = View.GONE
             resultWebView.visibility = View.VISIBLE
-            resultWebView.loadDataWithBaseURL(null, cached, "text/html", "utf-8", null)
+            resultWebView.loadDataWithBaseURL("https://sis.asu.edu.bh/", cached, "text/html", "utf-8", null)
             return
         }
 
@@ -615,7 +622,9 @@ class SisDashboardActivity : AppCompatActivity() {
         DashboardHtmlBuilder.LANG = prefs.getString("lang", "ar") ?: "ar"
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).putInt("version", CACHE_VERSION).apply()
-        resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+        
+        // التعديل هنا: تمرير رابط الجامعة كأساس عشان تشتغل الكوكيز حقت صورة الملف الشخصي
+        resultWebView.loadDataWithBaseURL("https://sis.asu.edu.bh/", html, "text/html", "utf-8", null)
     }
 
     private var pendingEvent: Triple<String, String, Pair<String, String>>? = null
