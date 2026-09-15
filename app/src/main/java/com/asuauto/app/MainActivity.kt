@@ -98,7 +98,7 @@ class MainActivity : AppCompatActivity() {
         val biometricEnabled = prefs.getBoolean("biometric_enabled", false)
         val hasCache = getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).getString("html", null) != null
 
-        // الدخول المباشر للوحة في حال وجود بيانات محفوظة (Cache)
+        // حل مشكلة تكرار الشاشات والانتقال المباشر السلس
         if (savedUser != null && savedPass != null) {
             if (hasCache) {
                 if (biometricEnabled && canUseBiometric()) {
@@ -108,11 +108,13 @@ class MainActivity : AppCompatActivity() {
                     promptBiometric(
                         onSuccess = { 
                             startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                            finish()
                         },
                         onFail = { }
                     )
                 } else {
                     startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                    finish() // منع العودة لـ MainActivity وتجنب تداخل شاشات التحميل
                 }
             } else {
                 showLoggedInState()
@@ -217,6 +219,7 @@ class MainActivity : AppCompatActivity() {
                         } else {
                             pendingSisDashboardLaunch = false
                             startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                            finish()
                         }
                     }
                 }
@@ -227,6 +230,7 @@ class MainActivity : AppCompatActivity() {
             if (!isNetworkAvailable()) {
                 if (hasCache) {
                     startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                    finish()
                 } else {
                     android.widget.Toast.makeText(this, "لا يوجد اتصال بالإنترنت ولا توجد بيانات محفوظة", android.widget.Toast.LENGTH_SHORT).show()
                 }
