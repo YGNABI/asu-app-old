@@ -12,6 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
+import android.content.Intent
 import org.json.JSONArray
 
 class SisDashboardActivity : AppCompatActivity() {
@@ -61,13 +62,6 @@ class SisDashboardActivity : AppCompatActivity() {
         function clickAccountNext() {
             var a = document.querySelector('.t-Report-paginationLink--next');
             if (a) { a.click(); return true; }
-            return false;
-        }
-        function clickTabByLabel(label) {
-            var panel = document.querySelector('[data-label="' + label + '"]');
-            if (!panel || !panel.id) return false;
-            var tabBtn = document.getElementById(panel.id + '_tab');
-            if (tabBtn) { tabBtn.click(); return true; }
             return false;
         }
         function scrapeTableById(id) {
@@ -210,6 +204,19 @@ class SisDashboardActivity : AppCompatActivity() {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         resultWebView.settings.javaScriptEnabled = true
+
+        // فرض تفعيل الوضع الليلي أو النهاري حسب إعدادات نظام الجهاز
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val nightModeFlags = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            if (nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES) {
+                webView.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_ON
+                resultWebView.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_ON
+            } else {
+                webView.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_OFF
+                resultWebView.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_OFF
+            }
+        }
+
         val bridge = Bridge()
         webView.addJavascriptInterface(bridge, "AndroidBridge")
         resultWebView.addJavascriptInterface(bridge, "AndroidBridge")
@@ -320,38 +327,14 @@ class SisDashboardActivity : AppCompatActivity() {
                     "moodleCourses" -> {
                         view.evaluateJavascript("stillOnMoodleLogin();") { stillOnLogin ->
                             if (stillOnLogin == "true") {
-                                DebugLog.error("لا توجد جلسة Moodle سارية — يرجى العودة إلى الصفحة الرئيسية والضغط على \"لوحة SIS الذكية\" مرة أخرى (يلزم تسجيل الدخول إلى Moodle قبل فتح اللوحة)")
+                                DebugLog.error("لا توجد جلسة Moodle سارية")
                                 phase = "done"
                                 view.postDelayed({ buildAndShowDashboard() }, 300)
                                 return@evaluateJavascript
                             }
-                            val diagJs = """
-                                (function() {
-                                    return JSON.stringify({
-                                        url: location.href,
-                                        title: document.title,
-                                        cardCount: document.querySelectorAll('[data-region="course-content"]').length,
-                                        bodySnippet: (document.body.innerText || '').trim().slice(0, 200)
-                                    });
-                                })();
-                            """.trimIndent()
-                            view.evaluateJavascript(diagJs) { rawDiag ->
-                                try {
-                                    val diag = org.json.JSONObject(org.json.JSONTokener(rawDiag).nextValue() as String)
-                                    val cardCount = diag.optInt("cardCount", -1)
-                                    if (cardCount <= 0) {
-                                        DebugLog.error(
-                                            "لا تحتوي الصفحة الرئيسية لـ Moodle على بطاقات مواد — الرابط الفعلي: ${diag.optString("url")} | " +
-                                                "العنوان: ${diag.optString("title")} | مقتطف: ${diag.optString("bodySnippet")}"
-                                        )
-                                    }
-                                } catch (e: Exception) {
-                                    DebugLog.warn("تعذر قراءة تشخيص صفحة Moodle: ${e.message}")
-                                }
-                                view.evaluateJavascript("AndroidBridge.tbl('moodleCourses', scrapeMoodleCourses());", null)
-                                phase = "done"
-                                view.postDelayed({ buildAndShowDashboard() }, 300)
-                            }
+                            view.evaluateJavascript("AndroidBridge.tbl('moodleCourses', scrapeMoodleCourses());", null)
+                            phase = "done"
+                            view.postDelayed({ buildAndShowDashboard() }, 300)
                         }
                     }
                 }
@@ -473,7 +456,6 @@ class SisDashboardActivity : AppCompatActivity() {
         fun checkLogin(failed: Boolean) {
             if (failed && phase != "done" && phase != "failed") {
                 phase = "failed"
-                DebugLog.error("فشل تسجيل الدخول لـ SIS (اسم المستخدم/الرقم السري غير صحيح)")
                 runOnUiThread {
                     resultWebView.visibility = View.GONE
                     webView.visibility = View.GONE
@@ -508,7 +490,7 @@ class SisDashboardActivity : AppCompatActivity() {
         fun openCourseMaterials(moodleId: String, courseName: String) {
             runOnUiThread {
                 if (moodleId.isBlank()) return@runOnUiThread
-                val intent = android.content.Intent(this@SisDashboardActivity, CourseMaterialsActivity::class.java)
+                val intent = Intent(this@SisDashboardActivity, CourseMaterialsActivity::class.java)
                 intent.putExtra("moodleId", moodleId)
                 intent.putExtra("courseName", courseName)
                 startActivity(intent)
@@ -523,7 +505,7 @@ class SisDashboardActivity : AppCompatActivity() {
         ) {
             runOnUiThread {
                 if (moodleId.isBlank()) return@runOnUiThread
-                val intent = android.content.Intent(this@SisDashboardActivity, AssessmentsActivity::class.java)
+                val intent = Intent(this@SisDashboardActivity, AssessmentsActivity::class.java)
                 intent.putExtra("moodleId", moodleId)
                 intent.putExtra("courseName", courseName)
                 intent.putExtra("midDate", midDate)
@@ -533,6 +515,34 @@ class SisDashboardActivity : AppCompatActivity() {
                 intent.putExtra("finTime", finTime)
                 intent.putExtra("finRoom", finRoom)
                 startActivity(intent)
+            }
+        }
+
+        @JavascriptInterface
+        fun openOutlook(instructorName: String, courseName: String) {
+            runOnUiThread {
+                try {
+                    val intent = packageManager.getLaunchIntentForPackage("com.microsoft.office.outlook")
+                    if (intent != null) {
+                        intent.addCategory(Intent.CATEGORY_LAUNCHER)
+                        intent.putExtra(Intent.EXTRA_SUBJECT, "Inquiry regarding $courseName - Instructor: $instructorName")
+                        startActivity(intent)
+                    } else {
+                        android.widget.Toast.makeText(
+                            this@SisDashboardActivity,
+                            "تطبيق Microsoft Outlook غير مثبت. يرجى تنزيله من المتجر لإرسال البريد.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                        val storeIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("market://details?id=com.microsoft.office.outlook"))
+                        startActivity(storeIntent)
+                    }
+                } catch (e: Exception) {
+                    android.widget.Toast.makeText(
+                        this@SisDashboardActivity,
+                        "تعذر فتح تطبيق Outlook",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         }
 
@@ -557,59 +567,6 @@ class SisDashboardActivity : AppCompatActivity() {
             rows.add(cells)
         }
         return rows
-    }
-
-    private fun runDiagnostics(moodleCourses: List<CourseSummary>) {
-        val studentName = DataStore.f("studentName")
-        if (studentName.isBlank()) {
-            DebugLog.error("تعذّر الحصول على اسم الطالب من نظام SIS")
-        } else {
-            DebugLog.ok("بيانات الطالب الأساسية ($studentName)")
-        }
-
-        if (DataStore.registration.size <= 1) {
-            DebugLog.error("جدول المواد المسجلة (registration) فاضي")
-        } else {
-            DebugLog.ok("جدول التسجيل — ${DataStore.registration.size - 1} مادة")
-        }
-
-        if (DataStore.semesterGrades.size <= 1) {
-            DebugLog.warn("جدول درجات الفصل فاضي (طبيعي أول الفصل قبل صدور درجات)")
-        } else {
-            DebugLog.ok("جدول درجات الفصل — ${DataStore.semesterGrades.size - 1} صف")
-        }
-
-        if (DataStore.attendance.size <= 1) {
-            DebugLog.warn("جدول الحضور والغياب فاضي")
-        } else {
-            DebugLog.ok("جدول الحضور والغياب — ${DataStore.attendance.size - 1} صف")
-        }
-
-        if (DataStore.transcript.isEmpty()) {
-            DebugLog.warn("كشف الدرجات (transcript) فاضي")
-        } else {
-            DebugLog.ok("كشف الدرجات — ${DataStore.transcript.size} صف")
-        }
-
-        if (DataStore.account.size <= 1) {
-            DebugLog.warn("كشف الحساب فاضي")
-        } else {
-            DebugLog.ok("كشف الحساب — ${DataStore.account.size - 1} صف")
-        }
-
-        if (moodleCourses.isEmpty()) {
-            DebugLog.error("لم تُسحب أي مادة من الصفحة الرئيسية لـ Moodle — يرجى التأكد من نجاح الدخول التلقائي لموقع التعليم الإلكتروني")
-        } else {
-            DebugLog.ok("مواد Moodle المسحوبة — ${moodleCourses.size} مادة")
-            for (mc in moodleCourses) {
-                DebugLog.ok("  Moodle: ${mc.name} (id=${mc.moodleId})")
-            }
-        }
-    }
-
-    private fun colIdxForDebug(header: List<String>, needle: String): Int {
-        for (i in header.indices) if (header[i].replace("\n", " ").contains(needle)) return i
-        return -1
     }
 
     private fun buildAndShowDashboard() {
@@ -637,7 +594,6 @@ class SisDashboardActivity : AppCompatActivity() {
         for (i in planLinks.indices) details[i] = toList(rawTables["planDetail_$i"])
         DataStore.planDetails = details
 
-        // سحب صورة الطالب المحفوظة وتمريرها
         val prefs = getSharedPreferences("asu_prefs", MODE_PRIVATE)
         val avatarUrl = prefs.getString("student_avatar", "") ?: ""
         if (avatarUrl.isNotBlank()) {
@@ -658,7 +614,6 @@ class SisDashboardActivity : AppCompatActivity() {
         DataStore.moodleCourses = moodleCourses
         DataStore.moodleCourseMap = MoodleCourseMatcher.match(DataStore.registration, moodleCourses)
 
-        runDiagnostics(moodleCourses)
         DataStore.gpaHistory = recordGpaSnapshot()
 
         DashboardHtmlBuilder.LANG = prefs.getString("lang", "ar") ?: "ar"
@@ -675,8 +630,6 @@ class SisDashboardActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 101 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             pendingEvent?.let { (title, date, tl) -> insertCalendarEvent(title, date, tl.first, tl.second) }
-        } else if (requestCode == 101) {
-            toast("يلزم منح صلاحية التقويم لإضافة الموعد")
         }
         pendingEvent = null
     }
@@ -684,15 +637,11 @@ class SisDashboardActivity : AppCompatActivity() {
     private fun insertCalendarEvent(title: String, dateStr: String, timeStr: String, location: String) {
         try {
             val parts = dateStr.trim().split("-")
-            if (parts.size != 3) {
-                toast("تاريخ الامتحان غير متوفر")
-                return
-            }
+            if (parts.size != 3) return
             val day = parts[0].trim().toInt()
             val month = parts[1].trim().toInt()
             val year = parts[2].trim().toInt()
-            var hour = 9
-            var minute = 0
+            var hour = 9; var minute = 0
             if (timeStr.isNotBlank()) {
                 val tp = timeStr.trim().split(":")
                 hour = tp.getOrNull(0)?.trim()?.toIntOrNull() ?: 9
@@ -703,25 +652,7 @@ class SisDashboardActivity : AppCompatActivity() {
             val startMillis = cal.timeInMillis
             val endMillis = startMillis + 60 * 60 * 1000
 
-            val calId = primaryCalendarId()
-            if (calId == null) {
-                toast("تعذّر العثور على تقويم في الجهاز")
-                return
-            }
-
-            val existsCursor = contentResolver.query(
-                android.provider.CalendarContract.Events.CONTENT_URI,
-                arrayOf(android.provider.CalendarContract.Events._ID),
-                "${android.provider.CalendarContract.Events.TITLE} = ? AND ${android.provider.CalendarContract.Events.DTSTART} = ?",
-                arrayOf(title, startMillis.toString()),
-                null
-            )
-            val alreadyExists = existsCursor?.use { it.count > 0 } ?: false
-            if (alreadyExists) {
-                toast("الموعد مضاف مسبقًا إلى التقويم")
-                return
-            }
-
+            val calId = primaryCalendarId() ?: return
             val values = android.content.ContentValues().apply {
                 put(android.provider.CalendarContract.Events.DTSTART, startMillis)
                 put(android.provider.CalendarContract.Events.DTEND, endMillis)
@@ -731,10 +662,7 @@ class SisDashboardActivity : AppCompatActivity() {
                 put(android.provider.CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
             }
             contentResolver.insert(android.provider.CalendarContract.Events.CONTENT_URI, values)
-            toast("تمت الإضافة إلى التقويم ✅")
-        } catch (e: Exception) {
-            toast("حدث خطأ أثناء الإضافة إلى التقويم")
-        }
+        } catch (e: Exception) {}
     }
 
     private fun primaryCalendarId(): Long? {
@@ -747,10 +675,6 @@ class SisDashboardActivity : AppCompatActivity() {
             if (it.moveToFirst()) return it.getLong(0)
         }
         return null
-    }
-
-    private fun toast(msg: String) {
-        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 
