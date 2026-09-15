@@ -325,9 +325,6 @@ class SisDashboardActivity : AppCompatActivity() {
                                 view.postDelayed({ buildAndShowDashboard() }, 300)
                                 return@evaluateJavascript
                             }
-                            // Session is fine. Grab the actual page state alongside the course
-                            // extraction so an empty result can be diagnosed from what's really
-                            // on the page, instead of guessing again next round.
                             val diagJs = """
                                 (function() {
                                     return JSON.stringify({
@@ -375,16 +372,6 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private var accountPageIndex = 0
 
-    /**
-     * The account-statement report paginates via AJAX (same URL, a "next" link
-     * that updates the table in place) rather than a real page navigation, so
-     * onPageFinished never fires again for later pages — that's why this loops
-     * itself with postDelayed instead of going through the phase/onPageFinished
-     * dispatch like the rest of the scraper. Previously this only ever fetched
-     * page 2 and stopped, which is why older transactions (e.g. "last 3 months"
-     * sitting on page 3+) were silently missing. Now it keeps clicking "next"
-     * and scraping until the button itself is gone, however many pages that is.
-     */
     private fun scrapeAccountPageAndContinue(view: WebView) {
         view.evaluateJavascript("AndroidBridge.tbl('accountPage$accountPageIndex', scrapeTableByLabel('تفاصيل كشف الحساب '));", null)
         view.evaluateJavascript("clickAccountNext();") { hasNext ->
@@ -394,36 +381,12 @@ class SisDashboardActivity : AppCompatActivity() {
                 view.postDelayed({ scrapeAccountPageAndContinue(view) }, 900)
             } else {
                 setStatus("جاري جلب مواد التعليم الالكتروني...")
-                // No login attempt here on purpose. MainActivity now logs into
-                // Moodle (once) right before it opens this activity — see
-                // MainActivity.btnSisDashboard. Doing our own separate login here
-                // was what caused repeated failures: Moodle throttles/rejects
-                // logins after a few rapid automated attempts from the same
-                // account, so a retry loop here actually made things worse, not
-                // better. If we land on a login page anyway (session somehow
-                // missing/expired), we report it clearly instead of retrying.
-                // Use the Moodle SITE HOME page, not /my/ (Dashboard). The real
-                // captured HTML this scraper was written against came from the
-                // site home page (body id="page-site-index", title "Home | asulms"),
-                // where the "My courses" cards are present in the initial HTML.
-                // /my/ renders its "Course overview" cards via JavaScript after
-                // load, so scraping it right after onPageFinished found 0 cards
-                // every time — that, not the login flow, was the root cause.
                 phase = "moodleCourses"
                 view.loadUrl("https://elearning.asu.edu.bh/?redirect=0")
             }
         }
     }
 
-    /**
-     * Appends today's cumulative GPA to a persisted history (SharedPreferences,
-     * survives across app opens) and returns the full history so far. SIS only
-     * ever gives us the CURRENT GPA, never a history — so this only starts
-     * accumulating a real trend from whenever this code first ran; there's no
-     * way to backfill past values. One entry per calendar day: if the app is
-     * opened more than once the same day, the existing entry for today is
-     * updated in place rather than duplicated.
-     */
     private fun recordGpaSnapshot(): List<Pair<String, Double>> {
         val gpa = DataStore.f("studentGpa").toDoubleOrNull() ?: return loadGpaHistory()
         val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
@@ -642,37 +605,6 @@ class SisDashboardActivity : AppCompatActivity() {
                 DebugLog.ok("  Moodle: ${mc.name} (id=${mc.moodleId})")
             }
         }
-
-        val sisCount = (DataStore.registration.size - 1).coerceAtLeast(0)
-        val matchedCount = DataStore.moodleCourseMap.size
-        if (moodleCourses.isNotEmpty() && sisCount > 0) {
-            if (matchedCount == 0) {
-                DebugLog.error("ولا مادة انطابقت بين SIS و Moodle — راجع أسماء المواد بالأعلى")
-            } else if (matchedCount < sisCount) {
-                DebugLog.warn("انطابقت $matchedCount من أصل $sisCount مادة بس")
-            } else {
-                DebugLog.ok("كل المواد ($matchedCount) انطابقت مع Moodle بنجاح")
-            }
-
-            val nameIdx = colIdxForDebug(DataStore.registration.firstOrNull() ?: emptyList(), "اسم المقرر")
-            val codeIdx = colIdxForDebug(DataStore.registration.firstOrNull() ?: emptyList(), "رمز")
-            if (nameIdx >= 0 && codeIdx >= 0) {
-                for (r in 1 until DataStore.registration.size) {
-                    val row = DataStore.registration[r]
-                    val code = row.getOrNull(codeIdx)?.trim().orEmpty()
-                    val name = row.getOrNull(nameIdx)?.trim().orEmpty()
-                    if (code.isBlank()) continue
-                    val normCode = code.uppercase().replace(Regex("[^A-Z0-9]"), "")
-                    val moodleId = DataStore.moodleCourseMap[normCode]
-                    if (moodleId != null) {
-                        val matchedName = moodleCourses.find { it.moodleId == moodleId }?.name ?: "?"
-                        DebugLog.ok("SIS: \"$name\" ($code) ✔ ↔ Moodle: \"$matchedName\"")
-                    } else {
-                        DebugLog.warn("SIS: \"$name\" ($code) ✘ ما لقى تطابق بـ Moodle")
-                    }
-                }
-            }
-        }
     }
 
     private fun colIdxForDebug(header: List<String>, needle: String): Int {
@@ -705,6 +637,13 @@ class SisDashboardActivity : AppCompatActivity() {
         for (i in planLinks.indices) details[i] = toList(rawTables["planDetail_$i"])
         DataStore.planDetails = details
 
+        // سحب صورة الطالب المحفوظة وتمريرها
+        val prefs = getSharedPreferences("asu_prefs", MODE_PRIVATE)
+        val avatarUrl = prefs.getString("student_avatar", "") ?: ""
+        if (avatarUrl.isNotBlank()) {
+            DataStore.fields["studentAvatar"] = avatarUrl
+        }
+
         val moodleCourses = mutableListOf<CourseSummary>()
         rawTables["moodleCourses"]?.let { arr ->
             for (i in 0 until arr.length()) {
@@ -722,7 +661,7 @@ class SisDashboardActivity : AppCompatActivity() {
         runDiagnostics(moodleCourses)
         DataStore.gpaHistory = recordGpaSnapshot()
 
-        DashboardHtmlBuilder.LANG = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
+        DashboardHtmlBuilder.LANG = prefs.getString("lang", "ar") ?: "ar"
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).putInt("version", CACHE_VERSION).apply()
         resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
@@ -826,9 +765,7 @@ object DataStore {
     var planNames: List<String> = emptyList()
     val planStats = mutableListOf<List<String>>()
     var moodleCourses: List<CourseSummary> = emptyList()
-    // normalized SIS course code -> Moodle course id
     var moodleCourseMap: Map<String, String> = emptyMap()
-    // chronological (date string "yyyy-MM-dd", cumulative GPA) snapshots, one per real scrape
     var gpaHistory: List<Pair<String, Double>> = emptyList()
 
     fun f(key: String) = fields[key]?.trim()?.takeIf { it != "-" && it.isNotEmpty() } ?: ""
