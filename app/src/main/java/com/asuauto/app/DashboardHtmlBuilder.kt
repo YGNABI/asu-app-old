@@ -3,6 +3,8 @@ package com.asuauto.app
 object DashboardHtmlBuilder {
 
     var LANG = "ar"
+    var isOffline = false
+    var lastUpdate = ""
     private fun t(ar: String, en: String) = if (LANG == "en") en else ar
 
     private fun esc(s: String) = s.replace("\"", "&quot;").replace("<", "&lt;")
@@ -107,7 +109,6 @@ object DashboardHtmlBuilder {
 
     private fun courses(): LinkedHashMap<String, Course> {
         val map = LinkedHashMap<String, Course>()
-
         val reg = DataStore.registration
         if (reg.size > 1) {
             val h = reg[0]
@@ -176,6 +177,12 @@ object DashboardHtmlBuilder {
     fun build(): String {
         val sb = StringBuilder()
         sb.append(HEAD())
+        if (isOffline) {
+            sb.append("<div style='background:#e74c3c;color:#fff;text-align:center;padding:6px;font-size:12px;font-weight:bold;position:sticky;top:43px;z-index:10'>")
+            sb.append("📶❌ وضع عدم الاتصال — آخر تحديث: $lastUpdate")
+            sb.append("</div>")
+        }
+        sb.append("<div id='refreshSpinner' style='display:none;text-align:center;padding:10px;'><div class='spinner'></div></div>")
         sb.append("<div id='home' class='page active'>").append(home()).append("</div>")
         sb.append("<div id='plan' class='page'>").append(plan()).append("</div>")
         sb.append("<div id='grades' class='page'>").append(grades()).append("</div>")
@@ -222,7 +229,8 @@ object DashboardHtmlBuilder {
 
         val transcriptHistory = mutableListOf<Pair<String, Double>>()
         var termCounter = 1
-        for (row in d.transcript) {
+        val rRows = d.transcript.reversed()
+        for (row in rRows) {
             if (row.size >= 2 && row[0] == "__TERM__") {
                 val text = row[1]
                 val gpa = Regex("GPA\\s+([\\d.]+)").find(text)?.groupValues?.get(1)?.toDoubleOrNull()
@@ -235,7 +243,7 @@ object DashboardHtmlBuilder {
                 }
             }
         }
-        sb.append(gpaChartOverlay(transcriptHistory.reversed()))
+        sb.append(gpaChartOverlay(transcriptHistory))
 
         val cs = courses()
         if (cs.isEmpty()) {
@@ -292,7 +300,7 @@ object DashboardHtmlBuilder {
     private fun gpaChartOverlay(history: List<Pair<String, Double>>): String {
         val sb = StringBuilder()
         sb.append("<div id='gpaOv' class='ov' onclick=\"if(event.target===this) document.getElementById('gpaOv').classList.remove('show')\">")
-        sb.append("<div class='modal' style='width:94%;max-width:420px;padding:20px'>")
+        sb.append("<div class='modal' style='width:94%;max-width:500px;padding:20px'>")
         sb.append("<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:14px'>")
         sb.append("<div class='big' style='font-size:16px'>${t("تطور المعدل التراكمي", "GPA Trend")}</div>")
         sb.append("<span onclick=\"document.getElementById('gpaOv').classList.remove('show')\" style='cursor:pointer;font-size:24px;line-height:1'>&times;</span>")
@@ -301,25 +309,27 @@ object DashboardHtmlBuilder {
         if (history.size < 2) {
             sb.append("<div class='empty' style='padding:20px 4px'>${t("لا توجد فصول سابقة كافية لرسم منحنى التطور", "Not enough past semesters")}</div>")
         } else {
-            val w = 400.0; val h = 260.0; val padL = 45.0; val padR = 25.0; val padT = 20.0; val padB = 75.0
+            val n = history.size
+            val dynamicWidth = maxOf(400.0, n * 60.0)
+            val h = 260.0; val padL = 45.0; val padR = 25.0; val padT = 20.0; val padB = 75.0
             val minV = 50.0; val maxV = 100.0
             val span = maxV - minV
-            val n = history.size
 
-            fun xAt(i: Int) = padL + (w - padL - padR) * i / (n - 1).coerceAtLeast(1)
+            fun xAt(i: Int) = padL + (dynamicWidth - padL - padR) * i / (n - 1).coerceAtLeast(1)
             fun yAt(v: Double) = padT + (h - padT - padB) * (1.0 - ((v - minV) / span))
 
-            sb.append("<svg viewBox='0 0 $w $h' width='100%' height='260' preserveAspectRatio='xMidYMid meet'>")
+            sb.append("<div style='overflow-x:auto; overflow-y:hidden; padding-bottom:10px;' dir='ltr'>")
+            sb.append("<svg width='$dynamicWidth' height='$h'>")
             
             val steps = 5
             for (s in 0..steps) {
                 val v = minV + (span * s / steps)
                 val y = yAt(v)
-                sb.append("<line x1='$padL' y1='$y' x2='${w - padR}' y2='$y' stroke='#dcdcdc' stroke-width='1'/>")
+                sb.append("<line x1='$padL' y1='$y' x2='${dynamicWidth - padR}' y2='$y' stroke='#dcdcdc' stroke-width='1'/>")
                 sb.append("<text x='${padL - 6}' y='${y + 4}' font-size='11' fill='#555' font-weight='bold' text-anchor='end'>${v.toInt()}</text>")
             }
             sb.append("<line x1='$padL' y1='$padT' x2='$padL' y2='${h - padB}' stroke='#444' stroke-width='2'/>")
-            sb.append("<line x1='$padL' y1='${h - padB}' x2='${w - padR}' y2='${h - padB}' stroke='#444' stroke-width='2'/>")
+            sb.append("<line x1='$padL' y1='${h - padB}' x2='${dynamicWidth - padR}' y2='${h - padB}' stroke='#444' stroke-width='2'/>")
 
             val pts = history.mapIndexed { i, pair -> xAt(i) to yAt(pair.second) }
             
@@ -342,7 +352,7 @@ object DashboardHtmlBuilder {
                 val py = h - padB + 16
                 sb.append("<text x='$px' y='$py' font-size='11' fill='#222' font-weight='bold' text-anchor='end' transform='rotate(-35,$px,$py)'>${esc(pair.first)}</text>")
             }
-            sb.append("</svg>")
+            sb.append("</svg></div>")
         }
         sb.append("</div></div>")
         return sb.toString()
@@ -449,7 +459,7 @@ object DashboardHtmlBuilder {
         }
 
         sb.append("<div class='legend2'>")
-        listOf("#1D9E75" to "٩٠-١00", "#0F6E56" to "٨٠-٨٩", "#378ADD" to "٧٠-٧٩", "#BA7517" to "٦٠-٦٩", "#E24B4A" to "٥٠-٥٩", "#1a1a1a" to t("أقل من ٥٠", "Below 50"))
+        listOf("#1D9E75" to "٩٠-١٠٠", "#0F6E56" to "٨٠-٨٩", "#378ADD" to "٧٠-٧٩", "#BA7517" to "٦٠-٦٩", "#E24B4A" to "٥٠-٥٩", "#1a1a1a" to t("أقل من ٥٠", "Below 50"))
             .forEach { (col, lbl) -> sb.append("<span><i style='background:$col'></i>$lbl</span>") }
         sb.append("</div>")
         sb.append("<div class='filters'><div class='chip' onclick=\"fg(this,'all')\">${t("الكل", "All")}</div><div class='chip active' onclick=\"fg(this,'sem')\">${t("حسب الفصل", "By Semester")}</div></div>")
@@ -603,6 +613,8 @@ object DashboardHtmlBuilder {
         .activeBannerText{width:100%;padding-top:6px}
         .activeBannerCourse{font-size:12px;color:#cbd3da}
         .activeBannerRoom{font-size:18px;font-weight:bold;margin-top:2px}
+        .spinner {border:4px solid rgba(0,0,0,0.1);width:30px;height:30px;border-radius:50%;border-left-color:#3498db;animation:spin 1s linear infinite;margin:0 auto;}
+        @keyframes spin {0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
         </style></head><body>
         <div class="tabs">
         <div class="tab active" onclick="sp(this,'home')">${t("الرئيسية", "Home")}</div>
@@ -616,7 +628,7 @@ object DashboardHtmlBuilder {
 
     private fun SCRIPT(): String {
         val calLbl = t("أضف للتقويم", "Add to Calendar")
-        val calLblExams = t("أضف مواعيد الامتحانات للتقويم", "Add Exams to Calendar")
+        val calLblExams = t("أضف كل التواريخ للتقويم", "Add All Dates to Calendar")
         val materialsLbl = t("عرض المادة التعليمية", "View Course Materials")
         val assessmentsLbl = t("عرض الواجبات والبحوث", "View Assignments & Research")
         val lSection = t("الشعبة", "Section"); val lTeacher = t("المدرس", "Instructor")
@@ -653,6 +665,14 @@ object DashboardHtmlBuilder {
         <div class='kv'><span>$lTotal</span><span id='gmtotal'></span></div>
         </div></div>
         <script>
+        var startY=0;
+        document.body.addEventListener('touchstart',function(e){if(window.scrollY<=0)startY=e.touches[0].clientY;},{passive:true});
+        document.body.addEventListener('touchend',function(e){
+          if(window.scrollY<=0 && startY>0 && e.changedTouches[0].clientY-startY>90){
+            document.getElementById('refreshSpinner').style.display='block';
+            if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
+          }
+        });
         function sp(el,id){
           document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
           document.getElementById(id).classList.add('active');
@@ -675,10 +695,8 @@ object DashboardHtmlBuilder {
           document.getElementById('mtg').textContent=v(c.tg)!=='-'?c.tg:(v(c.gc)!=='-'?c.gc:'لم تصدر');
           document.getElementById('mme').textContent=c.md?(c.md+' — '+c.mt+(c.mr?' — '+c.mr:'')):'-';
           document.getElementById('mfe').textContent=c.fd?(c.fd+' — '+c.ft+(c.fr?' — '+c.fr:'')):'-';
-          var btnsHtml='';
-          if(c.md || c.fd) {
-              btnsHtml+="<span class='calBtn' onclick=\"addAllExamsToCal('"+c.n+"','"+c.md+"','"+c.mtr+"','"+c.mr+"','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+CALLBL_EXAMS+"</span>";
-          }
+          
+          var btnsHtml="<span class='calBtn' onclick=\"addAllExamsToCal('"+c.n+"','"+c.md+"','"+c.mtr+"','"+c.mr+"','"+c.fd+"','"+c.ftr+"','"+c.fr+"')\">"+CALLBL_EXAMS+"</span>";
           document.getElementById('mCalBtns').innerHTML=btnsHtml;
           var matHtml = c.mid ? "<span class='calBtn' style='background:#2c3e50' onclick=\"openCourseMaterials('"+c.mid+"','"+c.n+"')\">"+MATERIALSLBL+"</span>" : '';
           document.getElementById('mMaterialsBtn').innerHTML = matHtml;
@@ -713,8 +731,8 @@ object DashboardHtmlBuilder {
         }
         function addAllExamsToCal(name, md, mtr, mr, fd, ftr, fr){
           if(typeof AndroidBridge!=='undefined') {
-            if(md) AndroidBridge.addCalendarEvent(name + ' - Midterm', md, mtr, mr||'');
-            if(fd) AndroidBridge.addCalendarEvent(name + ' - Final', fd, ftr, fr||'');
+            if(md) AndroidBridge.addCalendarEvent(name + ' - المنتصف', md, mtr, mr||'');
+            if(fd) AndroidBridge.addCalendarEvent(name + ' - النهائي', fd, ftr, fr||'');
           }
         }
         function openCourseMaterials(moodleId,courseName){
