@@ -6,6 +6,8 @@ object DashboardHtmlBuilder {
     var isOffline = false
     var lastUpdate = ""
     var pullLogoBase64 = ""
+    var calendarLogoBase64 = ""
+    
     private fun t(ar: String, en: String) = if (LANG == "en") en else ar
 
     private fun esc(s: String) = s.replace("\"", "&quot;").replace("<", "&lt;")
@@ -178,8 +180,11 @@ object DashboardHtmlBuilder {
     fun build(): String {
         val sb = StringBuilder()
         sb.append(HEAD())
-        sb.append("<div id='pullIndicator' style='height:0; overflow:hidden; position:relative;'>")
-        sb.append("<img src='data:image/jpeg;base64,$pullLogoBase64' style='position:absolute; bottom:0; left:0; width:100%; height:220px; object-fit:cover; opacity:0.7;'/>")
+        sb.append("<div id='pullIndicator' style='height:0; overflow:hidden; position:relative; background-color: #2c3e50;'>")
+        sb.append("<div style='position:absolute; bottom:15px; width:100%; text-align:center;'>")
+        sb.append("<div class='spinner' style='border-color: rgba(255,255,255,0.3); border-left-color: #fff;'></div>")
+        sb.append("<div style='color: white; font-size: 12px; margin-top: 8px;'>${t("جاري التحديث...", "Refreshing...")}</div>")
+        sb.append("</div>")
         sb.append("</div>")
         
         sb.append("<div id='scrollWrap'>")
@@ -192,7 +197,6 @@ object DashboardHtmlBuilder {
         sb.append("<div id='plan' class='page'>").append(plan()).append("</div>")
         sb.append("<div id='grades' class='page'>").append(grades()).append("</div>")
         sb.append("<div id='account' class='page'>").append(account()).append("</div>")
-        sb.append("<div id='sos' class='page'>").append(sos()).append("</div>")
         sb.append("</div>")
         sb.append("</div>")
         sb.append(SCRIPT())
@@ -224,7 +228,9 @@ object DashboardHtmlBuilder {
         if (avatarUrl.isNotBlank()) {
             sb.append("<img src='${esc(avatarUrl)}' style='width:2cm;height:2.5cm;border-radius:12px;object-fit:cover;border:1.5px solid #d4af37'/>")
         }
-        sb.append("<img src='file:///android_res/drawable/calendar_logo.png' onclick='openAcademicCalendar()' style='width:75px;height:auto;object-fit:contain;cursor:pointer;'/>")
+        if (calendarLogoBase64.isNotBlank()) {
+            sb.append("<img src='data:image/png;base64,$calendarLogoBase64' onclick='openAcademicCalendar()' style='width:75px;height:auto;object-fit:contain;cursor:pointer;'/>")
+        }
         sb.append("</div>")
         
         sb.append("</div>")
@@ -484,7 +490,7 @@ object DashboardHtmlBuilder {
         sb.append("</div><div class='grid'>")
         sb.append(kvBox(t("المعدل التراكمي", "GPA"), d.f("gpa")))
         sb.append(kvBox(t("الساعات التراكمية", "Cumulative Hours"), d.f("totalHours")))
-        sb.append(kvBox(t("ساعات ناجحة", "Passed Hours"), d.f("passedHours")))
+        sb.append(kvBox(t("ساعات مجتازة", "Passed Hours"), d.f("passedHours")))
         sb.append(kvBox(t("متبقي على الخطة", "Remaining Hours"), remaining))
         sb.append("</div></div>")
 
@@ -574,42 +580,8 @@ object DashboardHtmlBuilder {
             sb.append("<div><div class='rowTitle' style='font-size:13px'>${esc(label)}</div><div class='rowSub'>${esc(c(di))}</div></div>")
             sb.append("<div style='text-align:left'><span class='pill' style='background:$color'>${esc(tag)}</span><div style='font-size:13px;margin-top:3px'>${esc(amount)}</div></div></div>")
         }
-        sb.append("<div class='empty' id='accEmpty' style='display:none'>${t("لا توجد حركات خلال هذه الفترة", "No transactions in this period")}</div>")
+        sb.append("<div class='empty' id='accEmpty' style='display:none'>${t("لا توجد معاملات خلال هذه الفترة", "No transactions in this period")}</div>")
         sb.append("</div>")
-        return sb.toString()
-    }
-
-    private fun sos(): String {
-        val sb = StringBuilder()
-        sb.append("<div class='list'>")
-
-        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('REQUEST', false)\">")
-        sb.append("<div class='rowTitle'>${t("طلب", "Request")}</div><div>&#8250;</div></div>")
-
-        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('SUGGESTION', false)\">")
-        sb.append("<div class='rowTitle'>${t("الإقتراحات", "Suggestions")}</div><div>&#8250;</div></div>")
-
-        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('COMPLAINT', false)\">")
-        sb.append("<div class='rowTitle'>${t("الشكاوى", "Complaints")}</div><div>&#8250;</div></div>")
-
-        sb.append("<div class='row' onclick=\"openSpecialNeedsMenu()\">")
-        sb.append("<div class='rowTitle'>${t("ذوي الاحتياجات الخاصة", "Special Needs")}</div><div>&#8250;</div></div>")
-
-        sb.append("<div class='row' onclick=\"AndroidBridge.openExamExcuses()\">")
-        sb.append("<div class='rowTitle'>${t("أعذار امتحانات غير المكتمل", "Incomplete Exam Excuses")}</div><div>&#8250;</div></div>")
-
-        sb.append("</div>")
-
-        sb.append("<div class='ov' id='snov' onclick=\"if(event.target===this)document.getElementById('snov').classList.remove('show')\">")
-        sb.append("<div class='modal'>")
-        sb.append("<span onclick=\"document.getElementById('snov').classList.remove('show')\" style='float:left;font-size:20px;cursor:pointer'>&times;</span>")
-        sb.append("<div style='font-size:15px;font-weight:bold;margin-bottom:10px'>${t("ذوي الاحتياجات الخاصة", "Special Needs")}</div>")
-        sb.append("<div class='list'>")
-        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('REQUEST', true)\"><div class='rowTitle'>${t("طلب", "Request")}</div><div>&#8250;</div></div>")
-        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('SUGGESTION', true)\"><div class='rowTitle'>${t("الإقتراحات", "Suggestions")}</div><div>&#8250;</div></div>")
-        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('COMPLAINT', true)\"><div class='rowTitle'>${t("الشكاوى", "Complaints")}</div><div>&#8250;</div></div>")
-        sb.append("</div></div></div>")
-
         return sb.toString()
     }
 
@@ -644,8 +616,8 @@ object DashboardHtmlBuilder {
         .tabs{display:flex;position:sticky;top:0;background:#2c3e50;z-index:20}
         .tab{flex:1;text-align:center;padding:12px 2px;color:#fff;font-size:12px;cursor:pointer}
         .tab.active{background:#34495e;border-bottom:3px solid #3498db}
-        .page{width:20%;flex-shrink:0;padding:12px;box-sizing:border-box}
-        #pagesContainer{display:flex;transition:transform 0.3s ease-out, height 0.3s ease-out;width:500%; align-items:flex-start; overflow:hidden;}
+        .page{width:25%;flex-shrink:0;padding:12px;box-sizing:border-box}
+        #pagesContainer{display:flex;transition:transform 0.3s ease-out, height 0.3s ease-out;width:400%; align-items:flex-start; overflow:hidden;}
         .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px}
         .honor-gold{background:linear-gradient(135deg,#fcf4d9 0%,#e8c96b 50%,#d4af37 100%) !important;border:1px solid #d4af37;color:#333 !important}
         .honor-gold .muted,.honor-gold .lbl{color:#5a4a15 !important}
@@ -703,7 +675,6 @@ object DashboardHtmlBuilder {
         <div class="tab" onclick="sp(this,'plan')">${t("الخطة", "Plan")}</div>
         <div class="tab" onclick="sp(this,'grades')">${t("الدرجات", "Grades")}</div>
         <div class="tab" onclick="sp(this,'account')">${t("الحساب", "Account")}</div>
-        <div class="tab" onclick="sp(this,'sos')">${t("خدمات الطالب", "Student Services")}</div>
         </div>
         """.trimIndent()
     }
@@ -770,19 +741,18 @@ object DashboardHtmlBuilder {
         <script>
         var startY=0;
         var currentY=0;
-        var isPulling=false;
         var scrollWrap=document.getElementById('scrollWrap');
         var pullIndicator=document.getElementById('pullIndicator');
-        var PULL_MAX=180; // تم تقليل مسافة السحب لتسريع الاستجابة
+        var PULL_MAX=180;
 
-        var PAGE_ORDER=['home','plan','grades','account','sos'];
+        var PAGE_ORDER=['home','plan','grades','account'];
         var currentPageIndex=0;
         var pagesContainer=document.getElementById('pagesContainer');
         var startX=0;
         var currentX=0;
         var gesture=null;
-        
-        // تحسين دالة التحديث الجمالية لتكون سلسلة وبدون تقطيع
+        var isScrolling = false;
+
         function updatePullVisual(pullDist){
           var eased = pullDist > PULL_MAX ? PULL_MAX + (pullDist - PULL_MAX) * 0.2 : pullDist;
           pullIndicator.style.height=eased+'px';
@@ -798,7 +768,7 @@ object DashboardHtmlBuilder {
           currentPageIndex=index;
           pagesContainer.style.transition = animate ? 'transform 0.25s ease-out, height 0.25s ease-out' : 'none';
           var sign = document.dir === 'rtl' ? 1 : -1;
-          pagesContainer.style.transform = 'translateX(' + (sign * index * 20) + '%)';
+          pagesContainer.style.transform = 'translateX(' + (sign * index * 25) + '%)';
           document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
           document.getElementById(PAGE_ORDER[index]).classList.add('active');
           resizeContainer();
@@ -815,6 +785,7 @@ object DashboardHtmlBuilder {
           startX=e.touches[0].clientX;
           startY=e.touches[0].clientY;
           gesture=null;
+          isScrolling = false;
           pullIndicator.style.transition='none';
           pagesContainer.style.transition='none';
         },{passive:true});
@@ -830,56 +801,44 @@ object DashboardHtmlBuilder {
             gesture = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
           }
 
-          if(gesture==='vertical' && window.scrollY<=0){
-            if(dy > 0){
-              isPulling=true;
-              currentY=dy;
-              updatePullVisual(currentY);
-              // منع السلوك الافتراضي للمتصفح عند السحب لتجنب التعليق والثقل
-              if (e.cancelable) e.preventDefault();
-            }
-          } else if(gesture==='horizontal'){
-            var sign = document.dir === 'rtl' ? 1 : -1;
-            var isOverscroll = (currentPageIndex===0 && dx*sign < 0) || (currentPageIndex===PAGE_ORDER.length-1 && dx*sign > 0);
-            var damp = isOverscroll ? 0.3 : 1;
-            currentX = dx * damp;
-            var basePercent = sign * currentPageIndex * 20;
-            var dragPercent = (currentX / window.innerWidth) * 20;
-            pagesContainer.style.transform = 'translateX(' + (basePercent + dragPercent) + '%)';
-            if (e.cancelable) e.preventDefault();
+          if(gesture==='horizontal'){
+             var sign = document.dir === 'rtl' ? 1 : -1;
+             var isOverscroll = (currentPageIndex===0 && dx*sign < 0) || (currentPageIndex===PAGE_ORDER.length-1 && dx*sign > 0);
+             var damp = isOverscroll ? 0.3 : 1;
+             currentX = dx * damp;
+             var basePercent = sign * currentPageIndex * 25;
+             var dragPercent = (currentX / window.innerWidth) * 25;
+             pagesContainer.style.transform = 'translateX(' + (basePercent + dragPercent) + '%)';
+             if (e.cancelable) e.preventDefault();
+          } else if (gesture==='vertical') {
+             currentY = dy;
           }
         },{passive:false});
 
         document.addEventListener('touchend',function(e){
           if(gesture==='ignore'){ gesture=null; return; }
-          if(gesture==='vertical' && isPulling) {
-            pullIndicator.style.transition='height 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
-            pullIndicator.style.height='0px';
-            if(currentY>120){ // تم تقليل العتبة ليكون التحديث أسرع
-              document.getElementById('refreshSpinner').style.display='block';
-              if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
-            }
+          
+          if(gesture==='vertical' && window.scrollY <= 0 && currentY > 120) {
+             document.getElementById('refreshSpinner').style.display='block';
+             if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
           } else if(gesture==='horizontal'){
-            var threshold=window.innerWidth*0.15;
-            var nextIndex=currentPageIndex;
-            var sign = document.dir === 'rtl' ? 1 : -1;
-            if(currentX * sign > threshold && currentPageIndex < PAGE_ORDER.length-1) nextIndex++;
-            else if(currentX * sign < -threshold && currentPageIndex > 0) nextIndex--;
-            setActivePage(nextIndex, true);
+             var threshold=window.innerWidth*0.15;
+             var nextIndex=currentPageIndex;
+             var sign = document.dir === 'rtl' ? 1 : -1;
+             if(currentX * sign > threshold && currentPageIndex < PAGE_ORDER.length-1) nextIndex++;
+             else if(currentX * sign < -threshold && currentPageIndex > 0) nextIndex--;
+             setActivePage(nextIndex, true);
           }
+          
           startY=0;
           startX=0;
           currentY=0;
           currentX=0;
-          isPulling=false;
           gesture=null;
         });
 
         function sp(el,id){
           setActivePage(PAGE_ORDER.indexOf(id), true);
-        }
-        function openSpecialNeedsMenu(){
-          document.getElementById('snov').classList.add('show');
         }
         function v(x){return (x&&x!=='-'&&x!=='')?x:'-';}
         function openModal(k){
