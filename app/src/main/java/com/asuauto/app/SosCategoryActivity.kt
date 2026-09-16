@@ -9,6 +9,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONArray
 
@@ -22,12 +23,17 @@ class SosCategoryActivity : AppCompatActivity() {
     // "REQUEST" | "SUGGESTION" | "COMPLAINT"
     private var sosType = "REQUEST"
     private var specialFlag = false
+    private var loginAttempted = false
 
     private val LIST_URLS = mapOf(
         "REQUEST" to "https://sos.asu.edu.bh/ords/r/asudss/sos/4",
         "SUGGESTION" to "https://sos.asu.edu.bh/ords/r/asudss/sos/50",
         "COMPLAINT" to "https://sos.asu.edu.bh/ords/r/asudss/sos/8"
     )
+
+    private val LOGIN_CHECK_JS = """
+        document.querySelector('#P101_USERNAME') ? 'true' : 'false';
+    """.trimIndent()
 
     private val CARDS_JS = """
         (function() {
@@ -74,9 +80,49 @@ class SosCategoryActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String?) {
                 super.onPageFinished(view, url)
-                view.evaluateJavascript(CARDS_JS) { rawJson ->
-                    val cards = parseCards(rawJson)
-                    showCategories(cards)
+
+                view.evaluateJavascript(LOGIN_CHECK_JS) { isLoginPage ->
+                    if (isLoginPage == "true") {
+                        if (loginAttempted) {
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this@SosCategoryActivity,
+                                    SosHtmlBuilder.t(
+                                        "تعذر تسجيل الدخول لنظام خدمات الطلاب",
+                                        "Could not log in to Student Services"
+                                    ),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                finish()
+                            }
+                            return@evaluateJavascript
+                        }
+                        loginAttempted = true
+                        val prefs = getSharedPreferences("asu_prefs", MODE_PRIVATE)
+                        val user = prefs.getString("username", "") ?: ""
+                        val pass = prefs.getString("password", "") ?: ""
+                        val loginJs = """
+                            (function() {
+                                var u = document.querySelector('#P101_USERNAME');
+                                var p = document.querySelector('#P101_PASSWORD');
+                                if (!u || !p) return;
+                                u.value = "$user";
+                                p.value = "$pass";
+                                u.dispatchEvent(new Event('input', {bubbles:true}));
+                                p.dispatchEvent(new Event('input', {bubbles:true}));
+                                var ev1 = new KeyboardEvent('keydown', {bubbles:true, keyCode:13, which:13});
+                                var ev2 = new KeyboardEvent('keyup', {bubbles:true, keyCode:13, which:13});
+                                p.dispatchEvent(ev1);
+                                p.dispatchEvent(ev2);
+                            })();
+                        """.trimIndent()
+                        view.evaluateJavascript(loginJs, null)
+                    } else {
+                        view.evaluateJavascript(CARDS_JS) { rawJson ->
+                            val cards = parseCards(rawJson)
+                            showCategories(cards)
+                        }
+                    }
                 }
             }
         }
