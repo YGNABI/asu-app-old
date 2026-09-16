@@ -192,6 +192,7 @@ object DashboardHtmlBuilder {
         sb.append("<div id='plan' class='page'>").append(plan()).append("</div>")
         sb.append("<div id='grades' class='page'>").append(grades()).append("</div>")
         sb.append("<div id='account' class='page'>").append(account()).append("</div>")
+        sb.append("<div id='sos' class='page'>").append(sos()).append("</div>")
         sb.append("</div>")
         sb.append("</div>")
         sb.append(SCRIPT())
@@ -578,6 +579,40 @@ object DashboardHtmlBuilder {
         return sb.toString()
     }
 
+    private fun sos(): String {
+        val sb = StringBuilder()
+        sb.append("<div class='list'>")
+
+        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('REQUEST', false)\">")
+        sb.append("<div class='rowTitle'>${t("طلب", "Request")}</div><div>&#8250;</div></div>")
+
+        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('SUGGESTION', false)\">")
+        sb.append("<div class='rowTitle'>${t("الإقتراحات", "Suggestions")}</div><div>&#8250;</div></div>")
+
+        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('COMPLAINT', false)\">")
+        sb.append("<div class='rowTitle'>${t("الشكاوى", "Complaints")}</div><div>&#8250;</div></div>")
+
+        sb.append("<div class='row' onclick=\"openSpecialNeedsMenu()\">")
+        sb.append("<div class='rowTitle'>${t("ذوي الاحتياجات الخاصة", "Special Needs")}</div><div>&#8250;</div></div>")
+
+        sb.append("<div class='row' onclick=\"AndroidBridge.openExamExcuses()\">")
+        sb.append("<div class='rowTitle'>${t("أعذار امتحانات غير المكتمل", "Incomplete Exam Excuses")}</div><div>&#8250;</div></div>")
+
+        sb.append("</div>")
+
+        sb.append("<div class='ov' id='snov' onclick=\"if(event.target===this)document.getElementById('snov').classList.remove('show')\">")
+        sb.append("<div class='modal'>")
+        sb.append("<span onclick=\"document.getElementById('snov').classList.remove('show')\" style='float:left;font-size:20px;cursor:pointer'>&times;</span>")
+        sb.append("<div style='font-size:15px;font-weight:bold;margin-bottom:10px'>${t("ذوي الاحتياجات الخاصة", "Special Needs")}</div>")
+        sb.append("<div class='list'>")
+        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('REQUEST', true)\"><div class='rowTitle'>${t("طلب", "Request")}</div><div>&#8250;</div></div>")
+        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('SUGGESTION', true)\"><div class='rowTitle'>${t("الإقتراحات", "Suggestions")}</div><div>&#8250;</div></div>")
+        sb.append("<div class='row' onclick=\"AndroidBridge.openSos('COMPLAINT', true)\"><div class='rowTitle'>${t("الشكاوى", "Complaints")}</div><div>&#8250;</div></div>")
+        sb.append("</div></div></div>")
+
+        return sb.toString()
+    }
+
     private fun HEAD(): String {
         val dir = if (LANG == "en") "ltr" else "rtl"
         val langCode = if (LANG == "en") "en" else "ar"
@@ -609,8 +644,8 @@ object DashboardHtmlBuilder {
         .tabs{display:flex;position:sticky;top:0;background:#2c3e50;z-index:20}
         .tab{flex:1;text-align:center;padding:12px 2px;color:#fff;font-size:12px;cursor:pointer}
         .tab.active{background:#34495e;border-bottom:3px solid #3498db}
-        .page{width:25%;flex-shrink:0;padding:12px;box-sizing:border-box}
-        #pagesContainer{display:flex;transition:transform 0.3s ease-out, height 0.3s ease-out;width:400%; align-items:flex-start; overflow:hidden;}
+        .page{width:20%;flex-shrink:0;padding:12px;box-sizing:border-box}
+        #pagesContainer{display:flex;transition:transform 0.3s ease-out, height 0.3s ease-out;width:500%; align-items:flex-start; overflow:hidden;}
         .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px}
         .honor-gold{background:linear-gradient(135deg,#fcf4d9 0%,#e8c96b 50%,#d4af37 100%) !important;border:1px solid #d4af37;color:#333 !important}
         .honor-gold .muted,.honor-gold .lbl{color:#5a4a15 !important}
@@ -668,6 +703,7 @@ object DashboardHtmlBuilder {
         <div class="tab" onclick="sp(this,'plan')">${t("الخطة", "Plan")}</div>
         <div class="tab" onclick="sp(this,'grades')">${t("الدرجات", "Grades")}</div>
         <div class="tab" onclick="sp(this,'account')">${t("الحساب", "Account")}</div>
+        <div class="tab" onclick="sp(this,'sos')">${t("خدمات الطالب", "Student Services")}</div>
         </div>
         """.trimIndent()
     }
@@ -739,7 +775,7 @@ object DashboardHtmlBuilder {
         var pullIndicator=document.getElementById('pullIndicator');
         var PULL_MAX=180; // تم تقليل مسافة السحب لتسريع الاستجابة
 
-        var PAGE_ORDER=['home','plan','grades','account'];
+        var PAGE_ORDER=['home','plan','grades','account','sos'];
         var currentPageIndex=0;
         var pagesContainer=document.getElementById('pagesContainer');
         var startX=0;
@@ -762,7 +798,7 @@ object DashboardHtmlBuilder {
           currentPageIndex=index;
           pagesContainer.style.transition = animate ? 'transform 0.25s ease-out, height 0.25s ease-out' : 'none';
           var sign = document.dir === 'rtl' ? 1 : -1;
-          pagesContainer.style.transform = 'translateX(' + (sign * index * 25) + '%)';
+          pagesContainer.style.transform = 'translateX(' + (sign * index * 20) + '%)';
           document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
           document.getElementById(PAGE_ORDER[index]).classList.add('active');
           resizeContainer();
@@ -807,8 +843,8 @@ object DashboardHtmlBuilder {
             var isOverscroll = (currentPageIndex===0 && dx*sign < 0) || (currentPageIndex===PAGE_ORDER.length-1 && dx*sign > 0);
             var damp = isOverscroll ? 0.3 : 1;
             currentX = dx * damp;
-            var basePercent = sign * currentPageIndex * 25;
-            var dragPercent = (currentX / window.innerWidth) * 25;
+            var basePercent = sign * currentPageIndex * 20;
+            var dragPercent = (currentX / window.innerWidth) * 20;
             pagesContainer.style.transform = 'translateX(' + (basePercent + dragPercent) + '%)';
             if (e.cancelable) e.preventDefault();
           }
@@ -841,6 +877,9 @@ object DashboardHtmlBuilder {
 
         function sp(el,id){
           setActivePage(PAGE_ORDER.indexOf(id), true);
+        }
+        function openSpecialNeedsMenu(){
+          document.getElementById('snov').classList.add('show');
         }
         function v(x){return (x&&x!=='-'&&x!=='')?x:'-';}
         function openModal(k){

@@ -651,6 +651,24 @@ class SisDashboardActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun openSos(sosType: String, specialFlag: Boolean) {
+            runOnUiThread {
+                val intent = Intent(this@SisDashboardActivity, SosCategoryActivity::class.java)
+                intent.putExtra("sosType", sosType)
+                intent.putExtra("specialFlag", specialFlag)
+                startActivity(intent)
+            }
+        }
+
+        @JavascriptInterface
+        fun openExamExcuses() {
+            runOnUiThread {
+                val intent = Intent(this@SisDashboardActivity, SosExamExcuseActivity::class.java)
+                startActivity(intent)
+            }
+        }
+
+        @JavascriptInterface
         fun openOutlook(instructorName: String, courseName: String) {
             runOnUiThread {
                 try {
