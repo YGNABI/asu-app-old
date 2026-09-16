@@ -10,6 +10,7 @@ import android.webkit.WebViewClient
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONArray
 
@@ -23,6 +24,10 @@ class SosCategoryActivity : AppCompatActivity() {
     private var sosType = "REQUEST"
     private var specialFlag = false
     private var loginAttempted = false
+    private var isSosLoading = false
+    
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var loadRunnable: Runnable? = null
 
     private val LIST_URLS = mapOf(
         "REQUEST" to "https://sos.asu.edu.bh/ords/r/asudss/sos/4",
@@ -37,11 +42,12 @@ class SosCategoryActivity : AppCompatActivity() {
     private val CARDS_JS = """
         (function() {
             var out = [];
-            var cards = document.querySelectorAll('.t-Card-wrap, .t-Cards-item, a.t-Card');
+            var cards = document.querySelectorAll('.t-Cards-item');
             if (cards.length > 0) {
                 cards.forEach(function(a) {
                     var title = a.querySelector('.t-Card-title');
-                    var link = a.tagName === 'A' ? a.href : (a.querySelector('a') ? a.querySelector('a').href : '');
+                    var linkElement = a.querySelector('a');
+                    var link = linkElement ? linkElement.href : '';
                     if (title && link) {
                         out.push({ label: title.textContent.trim(), href: link });
                     }
@@ -70,16 +76,23 @@ class SosCategoryActivity : AppCompatActivity() {
         webView = findViewById(R.id.scrapeWebView)
         resultWebView = findViewById(R.id.resultWebView)
 
-        statusText.text = when (sosType) {
-            "REQUEST" -> "جاري جلب الطلبات..."
-            "SUGGESTION" -> "جاري جلب الاقتراحات..."
-            else -> "جاري جلب الشكاوى..."
-        }
+        statusText.text = "يرجى الانتظار، سيتم بدء التحميل..."
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         resultWebView.settings.javaScriptEnabled = true
         resultWebView.addJavascriptInterface(SosBridge(), "AndroidBridge")
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (isSosLoading) {
+                    Toast.makeText(this@SosCategoryActivity, "الرجاء الانتظار حتى اكتمال التحميل", Toast.LENGTH_SHORT).show()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
 
         var baseUrl = LIST_URLS[sosType] ?: LIST_URLS["REQUEST"]!!
         if (specialFlag) {
@@ -101,6 +114,7 @@ class SosCategoryActivity : AppCompatActivity() {
                     
                     if (isLogin) {
                         if (loginAttempted) {
+                            isSosLoading = false
                             runOnUiThread {
                                 Toast.makeText(
                                     this@SosCategoryActivity,
@@ -145,7 +159,24 @@ class SosCategoryActivity : AppCompatActivity() {
                 }
             }
         }
-        webView.loadUrl(baseUrl)
+
+        loadRunnable = Runnable {
+            isSosLoading = true
+            statusText.text = when (sosType) {
+                "REQUEST" -> "جاري جلب الطلبات..."
+                "SUGGESTION" -> "جاري جلب الاقتراحات..."
+                else -> "جاري جلب الشكاوى..."
+            }
+            android.webkit.CookieManager.getInstance().removeAllCookies(null)
+            android.webkit.CookieManager.getInstance().flush()
+            webView.loadUrl(baseUrl)
+        }
+        handler.postDelayed(loadRunnable!!, 2000)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        loadRunnable?.let { handler.removeCallbacks(it) }
     }
 
     private fun parseCards(rawJson: String?): List<SosCard> {
@@ -175,6 +206,7 @@ class SosCategoryActivity : AppCompatActivity() {
 
     private fun showCategories(cards: List<SosCard>) {
         runOnUiThread {
+            isSosLoading = false
             SosHtmlBuilder.LANG = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
             val title = when (sosType) {
                 "REQUEST" -> SosHtmlBuilder.t("طلب", "Request")
