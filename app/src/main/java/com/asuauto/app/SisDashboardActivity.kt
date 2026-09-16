@@ -172,23 +172,18 @@ class SisDashboardActivity : AppCompatActivity() {
         }
     """.trimIndent()
 
-    private fun logoBase64(): String {
-        val bmp = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.asu_logo)
-        val baos = java.io.ByteArrayOutputStream()
-        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
-        return android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
-    }
-
     private var loadingLogoCache: String? = null
 
     private fun loadingLogoBase64(): String {
         loadingLogoCache?.let { return it }
-        val bmp = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.asu_logo_loading)
-        val baos = java.io.ByteArrayOutputStream()
-        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
-        val encoded = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
-        loadingLogoCache = encoded
-        return encoded
+        return try {
+            val bmp = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.asu_logo_loading)
+            val baos = java.io.ByteArrayOutputStream()
+            bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
+            val encoded = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+            loadingLogoCache = encoded
+            encoded
+        } catch (e: Exception) { "" }
     }
 
     private fun showAnimatedLoader() {
@@ -340,7 +335,10 @@ class SisDashboardActivity : AppCompatActivity() {
                     }
                     "afterLogin" -> {
                         view.evaluateJavascript("AndroidBridge.checkLogin(stillOnLogin());", null)
-                        if (sessionId.isEmpty()) return
+                        if (sessionId.isEmpty()) {
+                            view.evaluateJavascript("var btn = document.querySelector('a.t-Button'); if(btn && btn.textContent.includes('Return')) btn.click();", null)
+                            return
+                        }
                         updateLoaderProgress(20)
                         
                         DataStore.reset()
@@ -567,35 +565,47 @@ class SisDashboardActivity : AppCompatActivity() {
         fun showAcademicCalendar() {
             runOnUiThread {
                 val calendarDetails = """
-                    ■ الفصل الدراسي الأول (2026 / 2027):
-                    - الإرشاد والتسجيل: 01 إلى 05-09-2026
-                    - بدء الدراسة: 06-09-2026
-                    - اختبارات المنتصف: 17 إلى 31-10-2026
-                    - الامتحانات النهائية: 08 إلى 26-12-2026
+                    ■ الفصل الدراسي الأول 2026 / 2027
+                    - بدء دوام أعضاء هيئة التدريس: 2026/08/30
+                    - الإرشاد والتسجيل والسحب والإضافة: 2026/09/01 إلى 2026/09/05
+                    - بدء الدراسة: 2026/09/06
+                    - التسجيل المتأخر والسحب والإضافة: 2026/09/06 إلى 2026/09/10
+                    - يوم التهيئة للطلبة الجدد: 2026/09/14
+                    - اختبارات منتصف الفصل الدراسي: 2026/10/17 إلى 2026/10/31
+                    - نهاية فترة الانسحاب من المقررات الدراسية: 2026/10/31
+                    - الإرشاد والتسجيل المبكر للفصل الدراسي الثاني: 2026/11/08 إلى 2026/11/12
+                    - فترة الامتحانات النهائية: 2026/12/08 إلى 2026/12/26
+                    - عطلة العيد الوطني: 2026/12/16 إلى 2026/12/17
+                    - بدء إجازة الطلبة: 2026/12/27
 
-                    ■ الفصل الدراسي الثاني (2026 / 2027):
-                    - الإرشاد والتسجيل: 05 إلى 09-01-2027
-                    - بدء الدراسة: 10-01-2027
-                    - اختبارات المنتصف: 20-02 إلى 06-03-2027
-                    - الامتحانات النهائية: 15-04 إلى 29-04-2027
+                    ■ الفصل الدراسي الثاني 2026 / 2027
+                    - الإرشاد والتسجيل والانسحاب والإضافة: 2027/01/05 إلى 2027/01/09
+                    - بدء الدراسة: 2027/01/10
+                    - التسجيل المتأخر والسحب والإضافة: 2027/01/10 إلى 2027/01/14
+                    - يوم التهيئة للطلبة الجدد: 2027/01/18
+                    - اختبارات منتصف الفصل الدراسي: 2027/02/20 إلى 2027/03/06
+                    - نهاية فترة الانسحاب من المقررات الدراسية: 2027/03/06
+                    - عطلة عيد الفطر المبارك: 2027/03/09 إلى 2027/03/11
+                    - الإرشاد والتسجيل المبكر للفصل الدراسي الصيفي: 2027/03/14 إلى 2027/03/18
+                    - فترة الامتحانات النهائية: 2027/04/15 إلى 2027/04/29
+                    - بدء إجازة الطلبة: 2027/04/30
 
-                    ■ الفصل الدراسي الصيفي (2026 / 2027):
-                    - التسجيل والإضافة: 06 إلى 08-05-2027
-                    - بدء الدراسة: 09-05-2027
-                    - اختبارات المنتصف: 29-05 إلى 07-06-2027
-                    - الامتحانات النهائية: 27-06 إلى 05-07-2027
-
-                    ■ الفصل الصيفي الممتد (2026 / 2027):
-                    - السحب والإضافة: 09 إلى 13-05-2027
-                    - اختبارات المنتصف: 08 إلى 14-06-2027
-                    - الامتحانات النهائية: 08 إلى 14-08-2027
-                    
-                    ■ العام الأكاديمي القادم (2027 / 2028):
-                    - بدء الدراسة: 05-09-2027
+                    ■ الفصل الدراسي الصيفي 2026 / 2027
+                    - الإرشاد والتسجيل والانسحاب والإضافة: 2027/05/06 إلى 2027/05/08
+                    - بدء الدراسة: 2027/05/09
+                    - التسجيل المتأخر والسحب والإضافة للفصل الصيفي: 2027/05/09 إلى 2027/05/11
+                    - التسجيل المتأخر والسحب والإضافة للفصل الصيفي الممتد: 2027/05/09 إلى 2027/05/13
+                    - عطلة عيد الأضحى المبارك: 2027/05/15 إلى 2027/05/18
+                    - اختبارات منتصف الفصل الدراسي الصيفي: 2027/05/29 إلى 2027/06/07
+                    - انتهاء فترة الانسحاب من المقررات الدراسية للفصل الصيفي: 2027/06/05
+                    - عطلة رأس السنة الهجرية: 2027/06/06
+                    - اختبارات منتصف الفصل الصيفي الممتد: 2027/06/08 إلى 2027/06/14
+                    - عطلة عاشوراء: 2027/06/15 إلى 2027/06/16
+                    - الإرشاد والتسجيل المبكر للفصل الدراسي الأول 2028/2027: 2027/06/20 إلى 2027/06/23
                 """.trimIndent()
 
                 android.app.AlertDialog.Builder(this@SisDashboardActivity)
-                    .setTitle("التقويم الأكاديمي الشامل")
+                    .setTitle("التقويم الجامعي 2026 / 2027")
                     .setMessage(calendarDetails)
                     .setPositiveButton("إغلاق", null)
                     .show()
