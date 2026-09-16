@@ -23,7 +23,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private val PREFS = "asu_prefs"
-    private var pendingSisDashboardLaunch = false
 
     private fun isNetworkAvailable(): Boolean {
         val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -49,11 +48,6 @@ class MainActivity : AppCompatActivity() {
         val langToggle = findViewById<TextView>(R.id.langToggle)
         val appTitle = findViewById<TextView>(R.id.appTitle)
 
-        // إخفاء عناصر الصفحة الوسطية المحذوفة بشكل دائم
-        btnSisDashboard.visibility = View.GONE
-        buttonsLayout.visibility = View.GONE
-        logoutTop.visibility = View.GONE
-
         fun applyLangText() {
             val lang = prefs.getString("lang", "ar") ?: "ar"
             if (lang == "en") {
@@ -63,6 +57,8 @@ class MainActivity : AppCompatActivity() {
                 passwordInput.hint = "Password"
                 biometricCheckbox.text = "Enable fingerprint login"
                 saveButton.text = "Save"
+                btnSisDashboard.text = "Smart SIS Dashboard"
+                logoutTop.text = "Logout"
             } else {
                 langToggle.text = "EN"
                 appTitle.text = "جامعة العلوم التطبيقية"
@@ -70,6 +66,8 @@ class MainActivity : AppCompatActivity() {
                 passwordInput.hint = "كلمة السر"
                 biometricCheckbox.text = "تفعيل الدخول بالبصمة"
                 saveButton.text = "حفظ البيانات"
+                btnSisDashboard.text = "لوحة SIS الذكية"
+                logoutTop.text = "خروج"
             }
         }
         applyLangText()
@@ -81,47 +79,56 @@ class MainActivity : AppCompatActivity() {
             applyLangText()
         }
 
-        fun showSetupState() {
-            setupLayout.visibility = View.VISIBLE
+        fun showLoggedInState() {
+            setupLayout.visibility = View.GONE
+            btnSisDashboard.visibility = View.VISIBLE
+            buttonsLayout.visibility = View.VISIBLE
+            logoutTop.visibility = View.VISIBLE
         }
 
-        fun executeDashboardLaunch() {
-            val hasCacheNow = getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).getString("html", null) != null
-            if (hasCacheNow) {
-                startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
-                finish()
-            } else {
-                if (!isNetworkAvailable()) {
-                    android.widget.Toast.makeText(this@MainActivity, "لا يوجد اتصال بالإنترنت ولا توجد بيانات محفوظة", android.widget.Toast.LENGTH_SHORT).show()
-                    showSetupState()
-                    return
-                }
-                setupLayout.visibility = View.GONE
-                pendingSisDashboardLaunch = true
-                webView.loadUrl("https://elearning.asu.edu.bh/?redirect=0")
-            }
+        fun showSetupState() {
+            setupLayout.visibility = View.VISIBLE
+            btnSisDashboard.visibility = View.GONE
+            buttonsLayout.visibility = View.GONE
+            logoutTop.visibility = View.GONE
         }
 
         val savedUser = prefs.getString("username", null)
         val savedPass = prefs.getString("password", null)
         val biometricEnabled = prefs.getBoolean("biometric_enabled", false)
+        val hasCache = getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).getString("html", null) != null
 
-        // حل مشكلة تكرار الشاشات والانتقال المباشر السلس دون الصفحة الوسطية
+        // الدخول المباشر للوحة في حال وجود بيانات محفوظة (Cache)
         if (savedUser != null && savedPass != null) {
-            if (biometricEnabled && canUseBiometric()) {
-                setupLayout.visibility = View.GONE
-                promptBiometric(
-                    onSuccess = { 
-                        executeDashboardLaunch()
-                    },
-                    onFail = { 
-                        showSetupState()
-                    }
-                )
+            if (hasCache) {
+                if (biometricEnabled && canUseBiometric()) {
+                    showSetupState()
+                    btnSisDashboard.visibility = View.GONE
+                    buttonsLayout.visibility = View.GONE
+                    promptBiometric(
+                        onSuccess = { 
+                            startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                        },
+                        onFail = { }
+                    )
+                } else {
+                    startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                }
             } else {
-                executeDashboardLaunch()
+                showLoggedInState()
             }
         } else {
+            showSetupState()
+        }
+
+        logoutTop.setOnClickListener {
+            prefs.edit().remove("username").remove("password").remove("biometric_enabled").remove("gpa_history").remove("student_avatar").remove("last_update_time").apply()
+            android.webkit.CookieManager.getInstance().removeAllCookies(null)
+            android.webkit.CookieManager.getInstance().flush()
+            getSharedPreferences("asu_dashboard_cache", MODE_PRIVATE).edit().clear().apply()
+            usernameInput.setText("")
+            passwordInput.setText("")
+            biometricCheckbox.isChecked = false
             showSetupState()
         }
 
@@ -135,7 +142,7 @@ class MainActivity : AppCompatActivity() {
                 .putString("password", passwordInput.text.toString())
                 .putBoolean("biometric_enabled", biometricCheckbox.isChecked && canUseBiometric())
                 .apply()
-            executeDashboardLaunch()
+            showLoggedInState()
         }
 
         var passwordVisible = false
@@ -154,6 +161,8 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webView)
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
+
+        var pendingSisDashboardLaunch = false
 
         fun stillOnAnyLoginPage(view: WebView, done: (Boolean) -> Unit) {
             view.evaluateJavascript(
@@ -208,11 +217,23 @@ class MainActivity : AppCompatActivity() {
                         } else {
                             pendingSisDashboardLaunch = false
                             startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
-                            finish()
                         }
                     }
                 }
             }
+        }
+
+        findViewById<Button>(R.id.btnSisDashboard).setOnClickListener {
+            if (!isNetworkAvailable()) {
+                if (hasCache) {
+                    startActivity(Intent(this@MainActivity, SisDashboardActivity::class.java))
+                } else {
+                    android.widget.Toast.makeText(this, "لا يوجد اتصال بالإنترنت ولا توجد بيانات محفوظة", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                return@setOnClickListener
+            }
+            pendingSisDashboardLaunch = true
+            webView.loadUrl("https://elearning.asu.edu.bh/?redirect=0")
         }
     }
 
