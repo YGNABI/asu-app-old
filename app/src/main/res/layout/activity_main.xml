@@ -149,16 +149,9 @@
     <LinearLayout
         android:id="@+id/buttonsLayout"
         android:orientation="horizontal"
-        android:padding="16dp"
+        android:padding="0dp"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
-
-        <Button
-            android:id="@+id/btnSos"
-            android:text="SOS webview underprocess"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-    </LinearLayout>
+        android:layout_height="0dp" />
 
     <WebView
         android:id="@+id/webView"
