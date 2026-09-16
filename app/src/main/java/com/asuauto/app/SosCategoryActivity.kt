@@ -20,7 +20,6 @@ class SosCategoryActivity : AppCompatActivity() {
     private lateinit var progressLayout: LinearLayout
     private lateinit var statusText: TextView
 
-    // "REQUEST" | "SUGGESTION" | "COMPLAINT"
     private var sosType = "REQUEST"
     private var specialFlag = false
     private var loginAttempted = false
@@ -38,12 +37,22 @@ class SosCategoryActivity : AppCompatActivity() {
     private val CARDS_JS = """
         (function() {
             var out = [];
-            document.querySelectorAll('.t-Card-wrap').forEach(function(a) {
-                var title = a.querySelector('.t-Card-title');
-                if (title && a.href) {
-                    out.push({ label: title.textContent.trim(), href: a.href });
-                }
-            });
+            var cards = document.querySelectorAll('.t-Card-wrap, .t-Cards-item, a.t-Card');
+            if (cards.length > 0) {
+                cards.forEach(function(a) {
+                    var title = a.querySelector('.t-Card-title');
+                    var link = a.tagName === 'A' ? a.href : (a.querySelector('a') ? a.querySelector('a').href : '');
+                    if (title && link) {
+                        out.push({ label: title.textContent.trim(), href: link });
+                    }
+                });
+            } else {
+                document.querySelectorAll('.t-MediaList-item a, table.t-Report-report a').forEach(function(a) {
+                    if (a.textContent.trim()) {
+                        out.push({ label: a.textContent.trim(), href: a.href });
+                    }
+                });
+            }
             return JSON.stringify(out);
         })();
     """.trimIndent()
@@ -60,6 +69,12 @@ class SosCategoryActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         webView = findViewById(R.id.scrapeWebView)
         resultWebView = findViewById(R.id.resultWebView)
+
+        statusText.text = when (sosType) {
+            "REQUEST" -> "جاري جلب الطلبات..."
+            "SUGGESTION" -> "جاري جلب الاقتراحات..."
+            else -> "جاري جلب الشكاوى..."
+        }
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
@@ -82,7 +97,9 @@ class SosCategoryActivity : AppCompatActivity() {
                 super.onPageFinished(view, url)
 
                 view.evaluateJavascript(LOGIN_CHECK_JS) { isLoginPage ->
-                    if (isLoginPage == "true") {
+                    val isLogin = isLoginPage?.replace("\"", "") == "true"
+                    
+                    if (isLogin) {
                         if (loginAttempted) {
                             runOnUiThread {
                                 Toast.makeText(
@@ -101,6 +118,7 @@ class SosCategoryActivity : AppCompatActivity() {
                         val prefs = getSharedPreferences("asu_prefs", MODE_PRIVATE)
                         val user = prefs.getString("username", "") ?: ""
                         val pass = prefs.getString("password", "") ?: ""
+                        
                         val loginJs = """
                             (function() {
                                 var u = document.querySelector('#P101_USERNAME');
@@ -110,10 +128,11 @@ class SosCategoryActivity : AppCompatActivity() {
                                 p.value = "$pass";
                                 u.dispatchEvent(new Event('input', {bubbles:true}));
                                 p.dispatchEvent(new Event('input', {bubbles:true}));
-                                var ev1 = new KeyboardEvent('keydown', {bubbles:true, keyCode:13, which:13});
-                                var ev2 = new KeyboardEvent('keyup', {bubbles:true, keyCode:13, which:13});
-                                p.dispatchEvent(ev1);
-                                p.dispatchEvent(ev2);
+                                
+                                var btn = document.querySelector('button[type="submit"], input[type="submit"], .t-Button');
+                                if(btn) { 
+                                    setTimeout(function(){ btn.click(); }, 400); 
+                                }
                             })();
                         """.trimIndent()
                         view.evaluateJavascript(loginJs, null)
@@ -130,9 +149,12 @@ class SosCategoryActivity : AppCompatActivity() {
     }
 
     private fun parseCards(rawJson: String?): List<SosCard> {
-        if (rawJson.isNullOrBlank()) return emptyList()
+        if (rawJson.isNullOrBlank() || rawJson == "null") return emptyList()
         return try {
-            val unescaped = org.json.JSONTokener(rawJson).nextValue() as String
+            var unescaped = rawJson
+            if (rawJson.startsWith("\"") && rawJson.endsWith("\"")) {
+                unescaped = org.json.JSONTokener(rawJson).nextValue() as String
+            }
             val arr = JSONArray(unescaped)
             val list = mutableListOf<SosCard>()
             for (i in 0 until arr.length()) {
@@ -153,6 +175,7 @@ class SosCategoryActivity : AppCompatActivity() {
             }
             val html = SosHtmlBuilder.buildCategoryList(title, cards)
             resultWebView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+            
             progressLayout.visibility = View.GONE
             resultWebView.visibility = View.VISIBLE
         }
