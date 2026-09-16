@@ -157,9 +157,17 @@ class SosCategoryActivity : AppCompatActivity() {
             }
             val arr = JSONArray(unescaped)
             val list = mutableListOf<SosCard>()
+            val seenLabels = mutableSetOf<String>()
+            
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
-                list.add(SosCard(o.optString("label"), o.optString("href")))
+                val label = o.optString("label").trim()
+                val href = o.optString("href")
+                
+                if (label.isNotBlank() && !seenLabels.contains(label)) {
+                    seenLabels.add(label)
+                    list.add(SosCard(label, href))
+                }
             }
             list
         } catch (e: Exception) { emptyList() }
