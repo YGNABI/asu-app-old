@@ -219,7 +219,6 @@ object DashboardHtmlBuilder {
         sb.append("<div class='avatar' style='background:$avatarBg;color:$avatarFg'>${esc(initials)}</div>")
         sb.append("<div><div class='big'>${esc(name)}</div><div class='muted'>${esc(d.f("studentCollege"))}</div></div></div>")
         
-        // تعديل: الشعار الكبير تحت الصورة وبدون نص
         sb.append("<div style='display:flex;flex-direction:column;align-items:center;gap:14px'>")
         if (avatarUrl.isNotBlank()) {
             sb.append("<img src='${esc(avatarUrl)}' style='width:2cm;height:2.5cm;border-radius:12px;object-fit:cover;border:1.5px solid #d4af37'/>")
@@ -591,7 +590,7 @@ object DashboardHtmlBuilder {
             --chart-grid: #dcdcdc;
             --chart-axis: #444;
         }
-        body{font-family:sans-serif;background:#f2f3f5;color:#1a1a1a;margin:0}
+        body{font-family:sans-serif;background:#f2f3f5;color:#1a1a1a;margin:0;overscroll-behavior-y:none;}
         @media (prefers-color-scheme: dark) {
             :root {
                 --chart-text: #e0e0e0;
@@ -699,7 +698,6 @@ object DashboardHtmlBuilder {
           }
         }
         
-        // استدعاء دالة التقويم الأكاديمي المرتبطة بـ AndroidBridge
         function openAcademicCalendar() {
             if(typeof AndroidBridge !== 'undefined') {
                 AndroidBridge.showAcademicCalendar();
@@ -739,7 +737,7 @@ object DashboardHtmlBuilder {
         var isPulling=false;
         var scrollWrap=document.getElementById('scrollWrap');
         var pullIndicator=document.getElementById('pullIndicator');
-        var PULL_MAX=220;
+        var PULL_MAX=180; // تم تقليل مسافة السحب لتسريع الاستجابة
 
         var PAGE_ORDER=['home','plan','grades','account'];
         var currentPageIndex=0;
@@ -747,9 +745,10 @@ object DashboardHtmlBuilder {
         var startX=0;
         var currentX=0;
         var gesture=null;
-
+        
+        // تحسين دالة التحديث الجمالية لتكون سلسلة وبدون تقطيع
         function updatePullVisual(pullDist){
-          var eased = PULL_MAX * (1 - Math.exp(-pullDist / (PULL_MAX * 0.9)));
+          var eased = pullDist > PULL_MAX ? PULL_MAX + (pullDist - PULL_MAX) * 0.2 : pullDist;
           pullIndicator.style.height=eased+'px';
           return eased;
         }
@@ -761,7 +760,7 @@ object DashboardHtmlBuilder {
 
         function setActivePage(index, animate){
           currentPageIndex=index;
-          pagesContainer.style.transition = animate ? 'transform 0.3s ease-out, height 0.3s ease-out' : 'none';
+          pagesContainer.style.transition = animate ? 'transform 0.25s ease-out, height 0.25s ease-out' : 'none';
           var sign = document.dir === 'rtl' ? 1 : -1;
           pagesContainer.style.transform = 'translateX(' + (sign * index * 25) + '%)';
           document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
@@ -791,7 +790,7 @@ object DashboardHtmlBuilder {
           var dx=x-startX;
           var dy=y-startY;
 
-          if(gesture===null && (Math.abs(dx)>8 || Math.abs(dy)>8)){
+          if(gesture===null && (Math.abs(dx)>10 || Math.abs(dy)>10)){
             gesture = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
           }
 
@@ -800,6 +799,8 @@ object DashboardHtmlBuilder {
               isPulling=true;
               currentY=dy;
               updatePullVisual(currentY);
+              // منع السلوك الافتراضي للمتصفح عند السحب لتجنب التعليق والثقل
+              if (e.cancelable) e.preventDefault();
             }
           } else if(gesture==='horizontal'){
             var sign = document.dir === 'rtl' ? 1 : -1;
@@ -809,20 +810,21 @@ object DashboardHtmlBuilder {
             var basePercent = sign * currentPageIndex * 25;
             var dragPercent = (currentX / window.innerWidth) * 25;
             pagesContainer.style.transform = 'translateX(' + (basePercent + dragPercent) + '%)';
+            if (e.cancelable) e.preventDefault();
           }
-        },{passive:true});
+        },{passive:false});
 
         document.addEventListener('touchend',function(e){
           if(gesture==='ignore'){ gesture=null; return; }
           if(gesture==='vertical' && isPulling) {
-            pullIndicator.style.transition='height 0.4s ease';
+            pullIndicator.style.transition='height 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
             pullIndicator.style.height='0px';
-            if(currentY>160){
+            if(currentY>120){ // تم تقليل العتبة ليكون التحديث أسرع
               document.getElementById('refreshSpinner').style.display='block';
               if(typeof AndroidBridge!=='undefined')AndroidBridge.refresh();
             }
           } else if(gesture==='horizontal'){
-            var threshold=window.innerWidth*0.18;
+            var threshold=window.innerWidth*0.15;
             var nextIndex=currentPageIndex;
             var sign = document.dir === 'rtl' ? 1 : -1;
             if(currentX * sign > threshold && currentPageIndex < PAGE_ORDER.length-1) nextIndex++;
