@@ -29,7 +29,6 @@ class CourseMaterialsActivity : AppCompatActivity() {
     private var courseName = ""
     private var lastWeeks: List<MoodleWeek> = emptyList()
     private var pageLoadFailed = false
-    private var loginAttempted = false
 
     private val EXTRACTION_JS = """
         (function() {
@@ -80,8 +79,6 @@ class CourseMaterialsActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         webView = findViewById(R.id.scrapeWebView)
         resultWebView = findViewById(R.id.resultWebView)
-        
-        statusText.text = "جاري جلب المواد التعليمية..."
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
@@ -118,43 +115,17 @@ class CourseMaterialsActivity : AppCompatActivity() {
                     return
                 }
 
-                view.evaluateJavascript("document.querySelector('input[name=\"password\"]') ? 'true' : 'false';") { stillOnLogin ->
-                    val isLogin = stillOnLogin?.replace("\"", "") == "true"
-                    if (isLogin) {
-                        if (loginAttempted) {
-                            showResult(emptyList(), sessionExpired = true)
-                            return@evaluateJavascript
-                        }
-                        loginAttempted = true
-                        val prefs = getSharedPreferences("asu_prefs", MODE_PRIVATE)
-                        val user = prefs.getString("username", "") ?: ""
-                        val pass = prefs.getString("password", "") ?: ""
-                        
-                        val loginJs = """
-                            (function() {
-                                var u = document.querySelector('input[name="username"]');
-                                var p = document.querySelector('input[name="password"]');
-                                if (u && p) {
-                                    u.value = "$user";
-                                    p.value = "$pass";
-                                    u.dispatchEvent(new Event('input',{bubbles:true}));
-                                    p.dispatchEvent(new Event('input',{bubbles:true}));
-                                    var b = document.querySelector('button[type="submit"]') || document.querySelector('#loginbtn');
-                                    if (b) setTimeout(function(){ b.click(); }, 400);
-                                }
-                            })();
-                        """.trimIndent()
-                        view.evaluateJavascript(loginJs, null)
+                view.evaluateJavascript(
+                    "document.querySelector('input[name=\"password\"]') ? 'true' : 'false';"
+                ) { stillOnLogin ->
+                    if (stillOnLogin == "true") {
+                        showResult(emptyList(), sessionExpired = true)
                         return@evaluateJavascript
                     }
-                    
                     view.evaluateJavascript(EXTRACTION_JS) { rawJson ->
                         try {
-                            var unescaped = rawJson
-                            if (rawJson != null && rawJson.startsWith("\"") && rawJson.endsWith("\"")) {
-                                unescaped = org.json.JSONTokener(rawJson).nextValue() as String
-                            }
-                            val weeks = parseWeeks(unescaped ?: "[]")
+                            val unescaped = org.json.JSONTokener(rawJson).nextValue() as String
+                            val weeks = parseWeeks(unescaped)
                             if (weeks.isNotEmpty()) {
                                 cachePrefs.edit().putString(moodleId, unescaped).apply()
                             }
@@ -166,13 +137,11 @@ class CourseMaterialsActivity : AppCompatActivity() {
                 }
             }
         }
-        
-        // إعادة التوجيه لضمان استقلالية الجلسة
+
         webView.loadUrl("https://elearning.asu.edu.bh/course/view.php?id=$moodleId&asupage=weekly")
     }
 
     private fun parseWeeks(json: String): List<MoodleWeek> {
-        if (json.isBlank() || json == "null") return emptyList()
         val arr = JSONArray(json)
         val weeks = mutableListOf<MoodleWeek>()
         for (i in 0 until arr.length()) {
@@ -205,7 +174,8 @@ class CourseMaterialsActivity : AppCompatActivity() {
     private fun showResult(weeks: List<MoodleWeek>, sessionExpired: Boolean) {
         lastWeeks = weeks
         runOnUiThread {
-            CourseMaterialsHtmlBuilder.LANG = getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
+            CourseMaterialsHtmlBuilder.LANG =
+                getSharedPreferences("asu_prefs", MODE_PRIVATE).getString("lang", "ar") ?: "ar"
             val html = if (sessionExpired) {
                 "<html dir='rtl'><body style='font-family:sans-serif;padding:20px;text-align:center;color:#888'>" +
                     "انتهت الجلسة، يرجى العودة إلى اللوحة الرئيسية والمحاولة مرة أخرى" +
