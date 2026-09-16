@@ -33,7 +33,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 25
+    private val CACHE_VERSION = 99
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -467,25 +467,14 @@ class SisDashboardActivity : AppCompatActivity() {
     inner class Bridge {
         @JavascriptInterface
         fun txt(tag: String, value: String) {
-            try {
-                var v = value.trim()
-                if (v.startsWith("\"") && v.endsWith("\"")) {
-                    v = org.json.JSONTokener(v).nextValue() as String
-                }
-                DataStore.fields[tag] = if (v == "null") "" else v
-            } catch (e: Exception) {
-                DataStore.fields[tag] = value.trim().removeSurrounding("\"").takeIf { it != "null" } ?: ""
-            }
+            val v = value.trim().removeSurrounding("\"")
+            DataStore.fields[tag] = if (v == "null") "" else v
         }
 
         @JavascriptInterface
         fun tbl(tag: String, json: String) {
             try {
-                var unescaped = json.trim()
-                if (unescaped.startsWith("\"") && unescaped.endsWith("\"")) {
-                    unescaped = org.json.JSONTokener(unescaped).nextValue() as String
-                }
-                rawTables[tag] = JSONArray(unescaped)
+                rawTables[tag] = JSONArray(json.trim().removeSurrounding("\""))
             } catch (e: Exception) {
                 try { rawTables[tag] = JSONArray(json) } catch (e2: Exception) {}
             }
@@ -494,11 +483,7 @@ class SisDashboardActivity : AppCompatActivity() {
         @JavascriptInterface
         fun planLinks(json: String) {
             try {
-                var unescaped = json.trim()
-                if (unescaped.startsWith("\"") && unescaped.endsWith("\"")) {
-                    unescaped = org.json.JSONTokener(unescaped).nextValue() as String
-                }
-                val arr = JSONArray(unescaped)
+                val arr = JSONArray(json.trim().removeSurrounding("\""))
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
                     planLinks.add(o.optString("href"))
