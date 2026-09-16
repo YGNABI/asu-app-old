@@ -33,7 +33,7 @@ class SisDashboardActivity : AppCompatActivity() {
 
     private val rawTables = HashMap<String, JSONArray>()
     private val CACHE_PREFS = "asu_dashboard_cache"
-    private val CACHE_VERSION = 18
+    private val CACHE_VERSION = 25
 
     private fun pageUrl(page: Int) = "https://sis.asu.edu.bh/ords/f?p=2020:$page:$sessionId:::::"
 
@@ -285,6 +285,7 @@ class SisDashboardActivity : AppCompatActivity() {
         DashboardHtmlBuilder.isOffline = !isNetworkAvailable()
         DashboardHtmlBuilder.lastUpdate = prefs.getString("last_update_time", "") ?: ""
         DashboardHtmlBuilder.pullLogoBase64 = pullLogoBase64Cached()
+        DashboardHtmlBuilder.calendarLogoBase64 = calendarLogoBase64Cached()
 
         val cachePrefs = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE)
         val cachedVersion = cachePrefs.getInt("version", -1)
@@ -467,14 +468,25 @@ class SisDashboardActivity : AppCompatActivity() {
     inner class Bridge {
         @JavascriptInterface
         fun txt(tag: String, value: String) {
-            val v = value.trim().removeSurrounding("\"")
-            DataStore.fields[tag] = if (v == "null") "" else v
+            try {
+                var v = value.trim()
+                if (v.startsWith("\"") && v.endsWith("\"")) {
+                    v = org.json.JSONTokener(v).nextValue() as String
+                }
+                DataStore.fields[tag] = if (v == "null") "" else v
+            } catch (e: Exception) {
+                DataStore.fields[tag] = value.trim().removeSurrounding("\"").takeIf { it != "null" } ?: ""
+            }
         }
 
         @JavascriptInterface
         fun tbl(tag: String, json: String) {
             try {
-                rawTables[tag] = JSONArray(json.trim().removeSurrounding("\""))
+                var unescaped = json.trim()
+                if (unescaped.startsWith("\"") && unescaped.endsWith("\"")) {
+                    unescaped = org.json.JSONTokener(unescaped).nextValue() as String
+                }
+                rawTables[tag] = JSONArray(unescaped)
             } catch (e: Exception) {
                 try { rawTables[tag] = JSONArray(json) } catch (e2: Exception) {}
             }
@@ -483,7 +495,11 @@ class SisDashboardActivity : AppCompatActivity() {
         @JavascriptInterface
         fun planLinks(json: String) {
             try {
-                val arr = JSONArray(json.trim().removeSurrounding("\""))
+                var unescaped = json.trim()
+                if (unescaped.startsWith("\"") && unescaped.endsWith("\"")) {
+                    unescaped = org.json.JSONTokener(unescaped).nextValue() as String
+                }
+                val arr = JSONArray(unescaped)
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
                     planLinks.add(o.optString("href"))
@@ -735,6 +751,22 @@ class SisDashboardActivity : AppCompatActivity() {
         }
     }
 
+    private var calendarLogoCache: String? = null
+
+    private fun calendarLogoBase64Cached(): String {
+        calendarLogoCache?.let { return it }
+        return try {
+            val stream = java.io.ByteArrayOutputStream()
+            val bitmap = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.calendar_logo)
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+            val encoded = android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
+            calendarLogoCache = encoded
+            encoded
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
     private fun buildAndShowDashboard() {
         DataStore.registration = toList(rawTables["registration"])
         DataStore.semesterGrades = toList(rawTables["semesterGrades"])
@@ -789,6 +821,8 @@ class SisDashboardActivity : AppCompatActivity() {
 
         DashboardHtmlBuilder.LANG = prefs.getString("lang", "ar") ?: "ar"
         DashboardHtmlBuilder.pullLogoBase64 = pullLogoBase64Cached()
+        DashboardHtmlBuilder.calendarLogoBase64 = calendarLogoBase64Cached()
+        
         val html = DashboardHtmlBuilder.build()
         getSharedPreferences(CACHE_PREFS, MODE_PRIVATE).edit().putString("html", html).putInt("version", CACHE_VERSION).apply()
         
