@@ -291,20 +291,13 @@ class SisDashboardActivity : AppCompatActivity() {
         DashboardHtmlBuilder.lastUpdate = prefs.getString("last_update_time", "") ?: ""
         DashboardHtmlBuilder.pullLogoBase64 = pullLogoBase64Cached()
 
-        val cachePrefs = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE)
-        val cachedVersion = cachePrefs.getInt("version", -1)
-        val cached = if (cachedVersion == CACHE_VERSION) cachePrefs.getString("html", null) else null
-
-        if (cached != null) {
-            progressLayout.visibility = View.GONE
-            resultWebView.visibility = View.VISIBLE
-            resultWebView.loadDataWithBaseURL("https://sis.asu.edu.bh/", cached, "text/html", "utf-8", null)
-            return
-        }
-
         val user = prefs.getString("username", "") ?: ""
         val pass = prefs.getString("password", "") ?: ""
 
+        // هذا الكلاينت لازم يتحدد دائمًا، حتى لو رجّعنا من الكاش تحت -
+        // لأن السحب للتحديث (pull-to-refresh) يستخدم نفس الـ webView لاحقًا عبر startScraping()،
+        // وبدون WebViewClient هنا، أي إعادة توجيه أثناء تسجيل الدخول تفتح المتصفح الخارجي
+        // بدل ما تكمل جوا التطبيق، وتنقطع عملية سحب البيانات (ولذلك تطلع تبويبات فاضية).
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
                 return false
@@ -438,6 +431,18 @@ class SisDashboardActivity : AppCompatActivity() {
                 }
             }
         }
+
+        val cachePrefs = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE)
+        val cachedVersion = cachePrefs.getInt("version", -1)
+        val cached = if (cachedVersion == CACHE_VERSION) cachePrefs.getString("html", null) else null
+
+        if (cached != null) {
+            progressLayout.visibility = View.GONE
+            resultWebView.visibility = View.VISIBLE
+            resultWebView.loadDataWithBaseURL("https://sis.asu.edu.bh/", cached, "text/html", "utf-8", null)
+            return
+        }
+
         startScraping()
     }
 
