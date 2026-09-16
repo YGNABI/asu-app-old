@@ -34,10 +34,6 @@
         <activity android:name=".SisDashboardActivity" android:exported="false" />
         <activity android:name=".CourseMaterialsActivity" android:exported="false" />
         <activity android:name=".AssessmentsActivity" android:exported="false" />
-        <activity android:name=".SosCategoryActivity" android:exported="false" />
-        <activity android:name=".SosCreateActivity" android:exported="false" />
-        <activity android:name=".SosTrackActivity" android:exported="false" />
-        <activity android:name=".SosExamExcuseActivity" android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
