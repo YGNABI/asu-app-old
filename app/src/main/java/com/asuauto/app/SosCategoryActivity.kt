@@ -42,20 +42,26 @@ class SosCategoryActivity : AppCompatActivity() {
     private val CARDS_JS = """
         (function() {
             var out = [];
+            var seen = {};
             var cards = document.querySelectorAll('.t-Cards-item');
             if (cards.length > 0) {
                 cards.forEach(function(a) {
                     var title = a.querySelector('.t-Card-title');
                     var linkElement = a.querySelector('a');
-                    var link = linkElement ? linkElement.href : '';
-                    if (title && link) {
-                        out.push({ label: title.textContent.trim(), href: link });
+                    if (title && linkElement) {
+                        var txt = title.textContent.trim();
+                        if (!seen[txt]) {
+                            seen[txt] = true;
+                            out.push({ label: txt, href: linkElement.href });
+                        }
                     }
                 });
             } else {
                 document.querySelectorAll('.t-MediaList-item a, table.t-Report-report a').forEach(function(a) {
-                    if (a.textContent.trim()) {
-                        out.push({ label: a.textContent.trim(), href: a.href });
+                    var txt = a.textContent.trim();
+                    if (txt && !seen[txt]) {
+                        seen[txt] = true;
+                        out.push({ label: txt, href: a.href });
                     }
                 });
             }
@@ -188,17 +194,11 @@ class SosCategoryActivity : AppCompatActivity() {
             }
             val arr = JSONArray(unescaped)
             val list = mutableListOf<SosCard>()
-            val seenLabels = mutableSetOf<String>()
-            
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
-                val label = o.optString("label").trim()
+                val label = o.optString("label")
                 val href = o.optString("href")
-                
-                if (label.isNotBlank() && !seenLabels.contains(label)) {
-                    seenLabels.add(label)
-                    list.add(SosCard(label, href))
-                }
+                list.add(SosCard(label, href))
             }
             list
         } catch (e: Exception) { emptyList() }
