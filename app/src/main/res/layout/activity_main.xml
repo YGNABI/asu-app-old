@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground">
+
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:orientation="horizontal"
+        android:background="#2C3E50"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="10dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:id="@+id/langToggle"
+            android:text="EN"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:padding="6dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="1dp" />
+
+        <TextView
+            android:id="@+id/logoutTop"
+            android:text="خروج"
+            android:textColor="#FF8A80"
+            android:textSize="13sp"
+            android:padding="6dp"
+            android:visibility="gone"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingTop="24dp"
+        android:paddingBottom="8dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <ImageView
+            android:id="@+id/logoImage"
+            android:src="@drawable/asu_logo"
+            android:background="@android:color/transparent"
+            android:contentDescription="ASU Logo"
+            android:layout_width="96dp"
+            android:layout_height="96dp" />
+
+        <TextView
+            android:id="@+id/appTitle"
+            android:text="جامعة العلوم التطبيقية"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:textColor="?android:attr/textColorPrimary"
+            android:layout_marginTop="8dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/setupLayout"
+        android:orientation="vertical"
+        android:padding="20dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <EditText
+            android:id="@+id/usernameInput"
+            android:hint="الرقم الجامعي"
+            android:background="@android:drawable/edit_text"
+            android:backgroundTint="#333333"
+            android:padding="12dp"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#B0B0B0"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <FrameLayout
+            android:layout_marginTop="10dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <EditText
+                android:id="@+id/passwordInput"
+                android:hint="كلمة السر"
+                android:inputType="textPassword"
+                android:background="@android:drawable/edit_text"
+                android:backgroundTint="#333333"
+                android:padding="12dp"
+                android:paddingEnd="44dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#B0B0B0"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <ImageView
+                android:id="@+id/togglePasswordVisibility"
+                android:src="@android:drawable/ic_menu_view"
+                android:contentDescription="إظهار كلمة السر"
+                android:padding="10dp"
+                app:tint="?android:attr/textColorSecondary"
+                android:layout_gravity="end|center_vertical"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="10dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <CheckBox
+                android:id="@+id/biometricCheckbox"
+                android:text="تفعيل الدخول بالبصمة"
+                android:textColor="?android:attr/textColorPrimary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/saveButton"
+            android:text="حفظ البيانات تسجيل الدخول"
+            android:layout_marginTop="10dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnSisDashboard"
+        android:text="اللوحة الذكية"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="12dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    <LinearLayout
+        android:id="@+id/buttonsLayout"
+        android:orientation="horizontal"
+        android:padding="0dp"
+        android:layout_width="match_parent"
+        android:layout_height="0dp" />
+
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="1dp"
+        android:layout_height="1dp" />
+
+</LinearLayout>
