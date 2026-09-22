@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
-import 'ui/screens/login_screen.dart';
+import 'ui/screens/app_root.dart';
+import 'core/theme_service.dart';
 
-void main() {
+// متغير عام لحفظ اللغة الحالية (الافتراضي: عربي) لتحديث التطبيق بالكامل فوراً
+final ValueNotifier<Locale> appLanguage = ValueNotifier<Locale>(const Locale('ar'));
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ThemeService.init();
   runApp(const AsuApp());
 }
 
@@ -11,25 +16,52 @@ class AsuApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'asu_app',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.light,
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.grey.shade100,
-        cardColor: Colors.white,
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        cardColor: const Color(0xFF1E1E1E),
-        useMaterial3: true,
-      ),
-      themeMode: ThemeMode.system,
-      home: const LoginScreen(),
+    // تغليف التطبيق بـ ValueListenableBuilder ليتحدث فور تغيير اللغة أو الثيم
+    return ValueListenableBuilder<Locale>(
+      valueListenable: appLanguage,
+      builder: (context, locale, child) {
+        return ValueListenableBuilder<AppThemeChoice>(
+          valueListenable: ThemeService.choice,
+          builder: (context, themeChoice, _) {
+            ThemeData? forcedTheme;
+            ThemeMode themeMode = ThemeMode.system;
+
+            switch (themeChoice) {
+              case AppThemeChoice.pink:
+                forcedTheme = ThemeService.pinkTheme;
+                break;
+              case AppThemeChoice.light:
+                forcedTheme = ThemeService.lightTheme;
+                break;
+              case AppThemeChoice.dark:
+                forcedTheme = ThemeService.darkTheme;
+                break;
+              case AppThemeChoice.auto:
+                themeMode = ThemeMode.system;
+                break;
+            }
+
+            return MaterialApp(
+              title: 'asu_app',
+              debugShowCheckedModeBanner: false,
+              locale: locale,
+              // تحديد اتجاه التطبيق (من اليمين لليسار أو العكس) بناءً على اللغة المختارة
+              builder: (context, child) {
+                return Directionality(
+                  textDirection: locale.languageCode == 'ar' 
+                      ? TextDirection.rtl 
+                      : TextDirection.ltr,
+                  child: child!,
+                );
+              },
+              theme: forcedTheme ?? ThemeService.lightTheme,
+              darkTheme: forcedTheme ?? ThemeService.darkTheme,
+              themeMode: forcedTheme != null ? ThemeMode.light : themeMode,
+              home: const AppRoot(),
+            );
+          },
+        );
+      },
     );
   }
 }
